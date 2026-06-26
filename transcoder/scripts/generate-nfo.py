@@ -151,9 +151,10 @@ def _esc(text: str) -> str:
 
 
 def normalise_filename(title: str, subtitle: str, season: int, episode: int, ext: str) -> str:
-    """Return a compact Jellyfin-friendly episode filename like 'Show S01E02.ext'.
+    """Return a compact Jellyfin-friendly filename.
 
-    TVHeadend now records as $t/S%snE%en.$x, so we keep the same compact shape.
+    TVHeadend records everything as $t/$t.$x.  For TV episodes we rewrite to
+    'Show SxxExx.ext'; for movies/specials without a season we keep a short form.
     Episode description lives in the NFO, not in the filename.
     """
     base = f"{title} S{season:02d}E{episode:02d}"
