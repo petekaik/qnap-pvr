@@ -66,10 +66,19 @@ def read_text_field(field: dict) -> str:
 
 
 def find_dvr_entry(recording_path: str) -> Optional[dict]:
-    """Locate the DVR log entry whose recorded filename matches the given path."""
-    target = Path(recording_path).name
+    """Locate the DVR log entry for a recording.
+
+    First try an exact filename match. TVHeadend sometimes rewrites the
+    recorded filename slightly (e.g. changing the last word), so fall back
+    to matching by the parent directory and the most recent entry there.
+    """
+    target = Path(recording_path)
+    target_name = target.name
+    target_parent = str(target.parent)
     if not TVH_LOG_DIR.is_dir():
         return None
+
+    candidates = []
     for log_file in sorted(TVH_LOG_DIR.iterdir(), key=os.path.getmtime, reverse=True):
         if not log_file.is_file():
             continue
@@ -78,8 +87,16 @@ def find_dvr_entry(recording_path: str) -> Optional[dict]:
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue
         for f in data.get("files", []):
-            if Path(f.get("filename", "")).name == target:
+            fname = f.get("filename", "")
+            fpath = Path(fname)
+            if fpath.name == target_name:
                 return data
+            if str(fpath.parent) == target_parent:
+                candidates.append((log_file.stat().st_mtime, data))
+
+    if candidates:
+        # Most recent entry in the same show directory.
+        return candidates[0][1]
     return None
 
 
@@ -135,7 +152,25 @@ def _esc(text: str) -> str:
 
 def normalise_filename(title: str, subtitle: str, season: int, episode: int, ext: str) -> str:
     """Return a Jellyfin-friendly episode filename like 'Show S01E02 - Title.ext'."""
-    ep_title = subtitle.split(".")[0].split(":")[0].strip() if subtitle else ""
+    ep_title = ""
+    if subtitle:
+        # Finnish listings usually start with season/episode info followed by a dot/space.
+        # Drop that prefix and keep the actual episode description.
+        desc = re.sub(
+            r"^[Kk]ausi\s*\d+\s*[,./]?\s*\d+/\d+\.?\s*",
+            "",
+            subtitle,
+        )
+        desc = re.sub(
+            r"^[Kk]ausi\s*\d+\D+[Jj]akso\s*\d+[-/]?\d*\.?\s*",
+            "",
+            desc,
+        )
+        # Use the first sentence of what remains.
+        desc = desc.split(".")[0].strip()
+        # Remove filesystem-unsafe characters.
+        desc = re.sub(r"[/\\<\u003e:|?*\"]", "", desc)
+        ep_title = desc
     base = f"{title} S{season:02d}E{episode:02d}"
     if ep_title:
         base += f" - {ep_title}"
