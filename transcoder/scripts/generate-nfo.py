@@ -162,10 +162,11 @@ def _esc(text: str) -> str:
 def normalise_filename(title: str, subtitle: str, season: int, episode: int, ext: str, is_movie: bool = False) -> str:
     """Return a Jellyfin-friendly filename.
 
-    TVHeadend records using $t/$Q$n.$x, which already produces a scraper-friendly
-    name. For TV episodes we ensure the final name is 'Show SxxExx.ext'. For
-    movies we keep the TVH title (e.g. 'Dredd (2012).ext') and rely on Jellyfin
-    movie metadata lookup.
+    TVHeadend records everything as $t/$t_%F_%R$n.$x (title + ISO date + time + unique suffix).
+    This is short and unique. We then rewrite the transcoded file to a scraper-friendly name:
+      - TV episodes: 'Show SxxExx.ext'
+      - Movies:      'Title.ext'
+    The episode/movie description lives in the NFO, not in the filename.
     """
     if is_movie:
         base = title
