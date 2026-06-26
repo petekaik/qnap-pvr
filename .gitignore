@@ -1,0 +1,28 @@
+# .env — keep this file secret. Never commit it.
+.env
+.env.local
+.env.*
+!.env.example
+
+# Runtime data that is created by the containers.
+**/tvheadend/config/
+**/jellyfin/config/
+**/media/
+**/transcoder/queue/
+**/logs/
+*.log
+
+# Local backups and OS files.
+*.bak
+*.backup
+.DS_Store
+Thumbs.db
+
+# Temporary files.
+*.tmp
+*.swp
+*~
+
+# Docker artifacts.
+*.tar
+*.tar.gz

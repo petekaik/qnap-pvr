@@ -1,0 +1,17 @@
+@startuml C4_Context_PVR
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title PVR Stack - System Context Diagram
+
+Person(user, "Home user", "Watches live TV and recordings")
+System(pvr, "PVR Stack", "TVHeadend + Jellyfin + transcoder on Docker host")
+System_Ext(antenna, "DVB-T/T2 antenna", "Free-to-air broadcasts")
+System_Ext(clients, "Playback clients", "Browsers, apps, DLNA clients")
+
+Rel(antenna, pvr, "Receives broadcast signal")
+Rel(user, clients, "Watches")
+Rel(clients, pvr, "Requests streams and files", "HTTP/DLNA")
+
+@enduml

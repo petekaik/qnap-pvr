@@ -1,0 +1,107 @@
+services:
+
+  tvheadend:
+    image: lscr.io/linuxserver/tvheadend:latest
+    container_name: tvheadend
+    hostname: tvheadend
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 2G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+    privileged: true
+    volumes:
+      - ${DATA}/tvheadend/config:/config
+      - ${DATA}/tvheadend/epg:/epg
+      - ${DATA}/media/recordings:/recordings
+      - ${DATA}/transcoder/scripts:/transcoder/scripts:ro
+      - ${DATA}/transcoder/queue:/transcoder/queue
+    devices:
+      - /dev/dvb:/dev/dvb
+    networks:
+      eth1:
+        ipv4_address: ${LOCAL_IPV4_1}
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    hostname: jellyfin
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 2G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    volumes:
+      - ${DATA}/jellyfin/config:/config
+      - ${DATA}/jellyfin/cache:/cache
+      - ${DATA}/media/recordings:/recordings
+      - ${DATA}/media/transcoded:/media/transcoded
+      - ${DATA}/media/tv:/tv
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - TZ=${TZ}
+    networks:
+      eth1:
+        ipv4_address: ${LOCAL_IPV4_2}
+
+  transcoder:
+    image: pvr-transcoder:latest
+    pull_policy: build
+    build:
+      context: ./transcoder
+    container_name: transcoder
+    hostname: transcoder
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    environment:
+      - TZ=${TZ}
+      - TRANSCODE_CRON=${TRANSCODE_CRON}
+    volumes:
+      - ${DATA}/media/recordings:/recordings
+      - ${DATA}/media/transcoded:/media/transcoded
+      - ${DATA}/transcoder/scripts:/etc/transcoder:ro
+      - ${DATA}/transcoder/queue:/transcoder/queue
+    networks:
+      - pvr_default
+
+networks:
+  eth1:
+    external: true
+    name: eth1
+  pvr_default:
+    name: pvr_default
