@@ -13,10 +13,12 @@ RUN apk add --no-cache \
 COPY scripts/post-recording.sh    /usr/local/bin/post-recording.sh
 COPY scripts/nightly-transcode.sh /etc/transcoder/nightly-transcode.sh
 COPY scripts/entrypoint.sh        /usr/local/bin/entrypoint.sh
+COPY scripts/generate-nfo.py      /etc/transcoder/generate-nfo.py
 
 RUN chmod +x /usr/local/bin/post-recording.sh \
              /etc/transcoder/nightly-transcode.sh \
-             /usr/local/bin/entrypoint.sh
+             /usr/local/bin/entrypoint.sh \
+             /etc/transcoder/generate-nfo.py
 
 VOLUME ["/recordings", "/media/transcoded", "/transcoder/queue"]
 

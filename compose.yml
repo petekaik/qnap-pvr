@@ -96,6 +96,7 @@ services:
       - ${DATA}/media/transcoded:/media/transcoded
       - ${DATA}/transcoder/scripts:/etc/transcoder:ro
       - ${DATA}/transcoder/queue:/transcoder/queue
+      - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
     networks:
       - pvr_default
 

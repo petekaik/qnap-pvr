@@ -78,6 +78,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     if [ $rc -eq 0 ]; then
         echo "$(date -Iseconds) OK $src" >> "$LOG"
         printf '%s\n' "$src" >> "$DONE"
+        # Generate Jellyfin-compatible NFO metadata from the TVHeadend DVR log.
+        final_mp4=$(python3 /etc/transcoder/generate-nfo.py "$cont_src" "$mp4" 2>&1)
+        echo "$final_mp4" >> "$LOG"
     else
         echo "$(date -Iseconds) FAIL $src (rc=$rc)" >> "$LOG"
         printf '%s\n' "$line" >> "$QUEUE"
