@@ -121,8 +121,7 @@ def write_tvshow_nfo(show_dir: Path, title: str) -> None:
     nfo.write_text("\n".join(xml) + "\n", encoding="utf-8")
 
 
-def write_episode_nfo(nfo_path: Path, meta: dict) -> None:
-    title = read_text_field(meta.get("title", {}))
+def write_episode_nfo(nfo_path: Path, meta: dict, title: str, is_movie: bool = False) -> None:
     subtitle = read_text_field(meta.get("subtitle", {}))
     plot = subtitle or title
     season, episode = parse_season_episode(title, subtitle)
@@ -132,17 +131,27 @@ def write_episode_nfo(nfo_path: Path, meta: dict) -> None:
         episode = 1
     aired = unix_ts_to_iso(meta.get("start", 0))
 
-    xml = [
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
-        "<episodedetails>",
-        f"  <title>{_esc(title)}</title>",
-        f"  <showtitle>{_esc(title)}</showtitle>",
-        f"  <season>{season}</season>",
-        f"  <episode>{episode}</episode>",
-        f"  <plot>{_esc(plot)}</plot>",
-        f"  <aired>{aired}</aired>",
-        "</episodedetails>",
-    ]
+    if is_movie:
+        xml = [
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+            "<movie>",
+            f"  <title>{_esc(title)}</title>",
+            f"  <plot>{_esc(plot)}</plot>",
+            f"  <aired>{_esc(aired)}</aired>",
+            "</movie>",
+        ]
+    else:
+        xml = [
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+            "<episodedetails>",
+            f"  <title>{_esc(title)}</title>",
+            f"  <showtitle>{_esc(title)}</showtitle>",
+            f"  <season>{season}</season>",
+            f"  <episode>{episode}</episode>",
+            f"  <plot>{_esc(plot)}</plot>",
+            f"  <aired>{_esc(aired)}</aired>",
+            "</episodedetails>",
+        ]
     nfo_path.write_text("\n".join(xml) + "\n", encoding="utf-8")
 
 
@@ -150,14 +159,18 @@ def _esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def normalise_filename(title: str, subtitle: str, season: int, episode: int, ext: str) -> str:
-    """Return a compact Jellyfin-friendly filename.
+def normalise_filename(title: str, subtitle: str, season: int, episode: int, ext: str, is_movie: bool = False) -> str:
+    """Return a Jellyfin-friendly filename.
 
-    TVHeadend records everything as $t/$t.$x.  For TV episodes we rewrite to
-    'Show SxxExx.ext'; for movies/specials without a season we keep a short form.
-    Episode description lives in the NFO, not in the filename.
+    TVHeadend records using $t/$Q$n.$x, which already produces a scraper-friendly
+    name. For TV episodes we ensure the final name is 'Show SxxExx.ext'. For
+    movies we keep the TVH title (e.g. 'Dredd (2012).ext') and rely on Jellyfin
+    movie metadata lookup.
     """
-    base = f"{title} S{season:02d}E{episode:02d}"
+    if is_movie:
+        base = title
+    else:
+        base = f"{title} S{season:02d}E{episode:02d}"
     return f"{base}{ext}"
 
 
@@ -169,8 +182,14 @@ def generate(recording_path: str, transcoded_path: str) -> str:
         return transcoded_path
 
     title = read_text_field(entry.get("title", {}))
+    # Finnish TV listings prefix movie titles with "Elokuva: " (e.g. "Elokuva: Dredd").
+    # Drop the prefix so Jellyfin's metadata lookup finds the actual movie title.
+    raw_title = title
+    title = re.sub(r"^[Ee]lokuva:\s*", "", title).strip()
     subtitle = read_text_field(entry.get("subtitle", {}))
     season, episode = parse_season_episode(title, subtitle)
+    is_movie = "Elokuva:" in raw_title and season is None and episode is None
+
     if season is None:
         season = 1
     if episode is None:
@@ -180,13 +199,15 @@ def generate(recording_path: str, transcoded_path: str) -> str:
     ext = src.suffix
     show_dir = src.parent
 
-    # Keep the existing show directory structure but ensure the episode file
-    # follows SxxExx naming so Jellyfin metadata lookup kicks in reliably.
-    new_name = normalise_filename(title, subtitle, season, episode, ext)
+    new_name = normalise_filename(title, subtitle, season, episode, ext, is_movie=is_movie)
     dst = show_dir / new_name
 
-    write_tvshow_nfo(show_dir, title)
-    write_episode_nfo(show_dir / (new_name.replace(ext, ".nfo")), entry)
+    if is_movie:
+        # Movies live in their own folder; no tvshow.nfo is needed.
+        pass
+    else:
+        write_tvshow_nfo(show_dir, title)
+    write_episode_nfo(show_dir / (new_name.replace(ext, ".nfo")), entry, title, is_movie=is_movie)
 
     if dst != src:
         shutil.move(str(src), str(dst))
