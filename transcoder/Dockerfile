@@ -1,11 +1,13 @@
 FROM alpine:latest
 
-# Install ffmpeg for transcoding and coreutils/dcron for the queue processor.
+# Install ffmpeg for transcoding, coreutils for flock, dcron for scheduling,
+# and python3 for robust JSONL parsing in the queue processor.
 RUN apk add --no-cache \
         ffmpeg \
         coreutils \
         dcron \
         bash \
+        python3 \
         ca-certificates
 
 COPY scripts/post-recording.sh    /usr/local/bin/post-recording.sh

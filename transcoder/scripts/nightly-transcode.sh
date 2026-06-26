@@ -9,10 +9,8 @@ DONE="/transcoder/queue/transcode-queue.done"
 LOG="/var/log/transcode-nightly.log"
 LOCK="/tmp/transcode-nightly.lock"
 
-# The queue stores the recording path as seen by TVH. If TVH runs inside a
-# container, that path is already the container path for the recordings
-# volume. If TVH runs on the host, adjust HOST_PREFIX to match your host
-# mount point (e.g. /mnt/pvr/media/recordings).
+# TVH writes the recording path as seen inside its own container. If TVH runs
+# on the host instead, change HOST_PREFIX to match the host mount point.
 HOST_PREFIX="/recordings"
 CONT_PREFIX="/recordings"
 
@@ -39,8 +37,11 @@ cp "$QUEUE" "$QUEUE.tmp"
 while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
 
-    src=$(echo "$line" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p')
-    [ -z "$src" ] && continue
+    # Use Python for correct JSON parsing (unicode, escaped quotes).
+    src=$(printf '%s\n' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])') || {
+        echo "$(date -Iseconds) SKIP malformed JSON: $line" >> "$LOG"
+        continue
+    }
 
     cont_src=$(echo "$src" | sed "s|^${HOST_PREFIX}|${CONT_PREFIX}|")
 
