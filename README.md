@@ -55,8 +55,8 @@ Set `TRANSCODE_CRON` in `.env`. Default is daily at 02:00. During testing you ca
 
 The transcoder writes two kinds of metadata next to each transcoded file:
 
-1. `tvshow.nfo` in the show directory.
-2. `<episode>.nfo` next to the `.mp4` file.
+1. `tvshow.nfo` in the show directory. It contains only the series title so Jellyfin can look up the full series metadata (plot, posters, genres, cast) online.
+2. `<episode>.nfo` next to the `.mp4` file. It contains episode-specific details parsed from the TVHeadend DVR log.
 
 It also renames episodes to `Show SxxExx - Title.mp4` so Jellyfin's built-in metadata lookup recognises them as TV episodes instead of guessing a movie title from the filename.
 

@@ -91,13 +91,14 @@ def unix_ts_to_iso(ts: int) -> str:
         return ""
 
 
-def write_tvshow_nfo(show_dir: Path, title: str, plot: str = "") -> None:
+def write_tvshow_nfo(show_dir: Path, title: str) -> None:
     nfo = show_dir / "tvshow.nfo"
     xml = [
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
         "<tvshow>",
         f"  <title>{_esc(title)}</title>",
-        f"  <plot>{_esc(plot)}</plot>",
+        "  <!-- Series metadata is intentionally minimal; Jellyfin looks up the",
+        "       title online and fills in plot, posters, genres and cast. -->",
         "</tvshow>",
     ]
     nfo.write_text("\n".join(xml) + "\n", encoding="utf-8")
@@ -165,7 +166,7 @@ def generate(recording_path: str, transcoded_path: str) -> str:
     new_name = normalise_filename(title, subtitle, season, episode, ext)
     dst = show_dir / new_name
 
-    write_tvshow_nfo(show_dir, title, subtitle)
+    write_tvshow_nfo(show_dir, title)
     write_episode_nfo(show_dir / (new_name.replace(ext, ".nfo")), entry)
 
     if dst != src:

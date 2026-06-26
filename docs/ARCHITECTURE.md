@@ -63,7 +63,9 @@ Jellyfin's filename-based metadata lookup easily mistakes recordings for movies 
 - mounts TVHeadend's DVR log directory (`/config/dvr/log`) read-only,
 - parses the original broadcast title and subtitle from the JSON log entry,
 - extracts Finnish season/episode markers such as `Kausi 4, 4/12` or `Kausi 31. Jakso 7-22`,
-- writes NFO files and renames the episode to `Show SxxExx - ...`.
+- writes a minimal `tvshow.nfo` containing only the series title so Jellyfin looks up the rest online,
+- writes a full `episodedetails.nfo` next to the `.mp4` with episode-specific plot and air date,
+- renames the episode to `Show SxxExx - ...`.
 
 This causes Jellyfin to identify the item as a TV series episode and fetch the correct poster, fanart and episode metadata.
 
