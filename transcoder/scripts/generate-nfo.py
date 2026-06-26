@@ -151,29 +151,12 @@ def _esc(text: str) -> str:
 
 
 def normalise_filename(title: str, subtitle: str, season: int, episode: int, ext: str) -> str:
-    """Return a Jellyfin-friendly episode filename like 'Show S01E02 - Title.ext'."""
-    ep_title = ""
-    if subtitle:
-        # Finnish listings usually start with season/episode info followed by a dot/space.
-        # Drop that prefix and keep the actual episode description.
-        desc = re.sub(
-            r"^[Kk]ausi\s*\d+\s*[,./]?\s*\d+/\d+\.?\s*",
-            "",
-            subtitle,
-        )
-        desc = re.sub(
-            r"^[Kk]ausi\s*\d+\D+[Jj]akso\s*\d+[-/]?\d*\.?\s*",
-            "",
-            desc,
-        )
-        # Use the first sentence of what remains.
-        desc = desc.split(".")[0].strip()
-        # Remove filesystem-unsafe characters.
-        desc = re.sub(r"[/\\<\u003e:|?*\"]", "", desc)
-        ep_title = desc
+    """Return a compact Jellyfin-friendly episode filename like 'Show S01E02.ext'.
+
+    TVHeadend now records as $t/S%snE%en.$x, so we keep the same compact shape.
+    Episode description lives in the NFO, not in the filename.
+    """
     base = f"{title} S{season:02d}E{episode:02d}"
-    if ep_title:
-        base += f" - {ep_title}"
     return f"{base}{ext}"
 
 
