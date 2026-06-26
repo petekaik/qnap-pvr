@@ -55,6 +55,10 @@ TVHeadend can transcode recordings itself with stream profiles, but doing so dur
 - uses a plain ffmpeg pipeline that is easier to tune than TVH's internal transcode logic,
 - avoids TVH bugs such as broken MPEG-TS transcode flags in some versions.
 
+## Related projects
+
+- **DVB tuner drivers for QNAP:** https://github.com/petekaik/qnap-dvb
+
 ## Network
 
 TVHeadend and Jellyfin use a Docker `macvlan` network (`eth1`) to obtain fixed IP addresses on the home LAN. The transcoder uses an internal bridge network only; it does not need a routable IP.

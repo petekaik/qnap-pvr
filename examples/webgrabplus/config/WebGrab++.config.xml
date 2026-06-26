@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <filename>/data/guide.xml</filename>
+    <mode>n</mode>
+    <postprocess run="n" grab="y">mdb</postprocess>
+    <logging>on</logging>
+    <retry time-out="5">4</retry>
+    <skip>12,10</skip>
+    <timespan>7</timespan>
+    <update>i</update>
+    <proxy>automatic</proxy>
+    <user-agent>Mozilla/5.0 (Windows NT 10.0; Win64; x64)</user-agent>
+
+    <!-- Example Finnish channels mapped to the telkussa.fi site.
+         Adjust site, site_id and xmltv_id to match your region and the
+         channel names used in TVHeadend. -->
+    <channel update="i" site="telkussa.fi" site_id="1" xmltv_id="Yle TV1">Yle TV1</channel>
+    <channel update="i" site="telkussa.fi" site_id="2" xmltv_id="Yle TV2">Yle TV2</channel>
+    <channel update="i" site="telkussa.fi" site_id="13" xmltv_id="Yle Teema &amp; Fem">Yle Teema &amp; Fem</channel>
+    <channel update="i" site="telkussa.fi" site_id="3" xmltv_id="MTV3">MTV3</channel>
+    <channel update="i" site="telkussa.fi" site_id="4" xmltv_id="Nelonen">Nelonen</channel>
+    <channel update="i" site="telkussa.fi" site_id="5" xmltv_id="SubTV">SubTV</channel>
+    <channel update="i" site="telkussa.fi" site_id="56" xmltv_id="Jim">Jim</channel>
+    <channel update="i" site="telkussa.fi" site_id="63" xmltv_id="Liv">Liv</channel>
+    <channel update="i" site="telkussa.fi" site_id="103" xmltv_id="Hero">Hero</channel>
+    <channel update="i" site="telkussa.fi" site_id="77" xmltv_id="FOX">FOX</channel>
+    <channel update="i" site="telkussa.fi" site_id="38" xmltv_id="Star">Star</channel>
+    <channel update="i" site="telkussa.fi" site_id="47" xmltv_id="National Geographic">National Geographic</channel>
+</settings>

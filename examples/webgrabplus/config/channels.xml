@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example WebGrab+Plus channels.xml for Finnish IPTV channels.
+     Sources: telkussa.fi (general channels).
+     xmltv_id values must match the channel names exposed by TVHeadend. -->
+<channels>
+  <channel update="i" site="telkussa.fi" site_id="1" xmltv_id="Yle TV1">Yle TV1</channel>
+  <channel update="i" site="telkussa.fi" site_id="2" xmltv_id="Yle TV2">Yle TV2</channel>
+  <channel update="i" site="telkussa.fi" site_id="13" xmltv_id="Yle Teema &amp; Fem">Yle Teema &amp; Fem</channel>
+  <channel update="i" site="telkussa.fi" site_id="3" xmltv_id="MTV3">MTV3</channel>
+  <channel update="i" site="telkussa.fi" site_id="4" xmltv_id="Nelonen">Nelonen</channel>
+  <channel update="i" site="telkussa.fi" site_id="5" xmltv_id="SubTV">SubTV</channel>
+  <channel update="i" site="telkussa.fi" site_id="56" xmltv_id="Jim">Jim</channel>
+  <channel update="i" site="telkussa.fi" site_id="63" xmltv_id="Liv">Liv</channel>
+  <channel update="i" site="telkussa.fi" site_id="103" xmltv_id="Hero">Hero</channel>
+  <channel update="i" site="telkussa.fi" site_id="77" xmltv_id="FOX">FOX</channel>
+  <channel update="i" site="telkussa.fi" site_id="38" xmltv_id="Star">Star</channel>
+  <channel update="i" site="telkussa.fi" site_id="47" xmltv_id="National Geographic">National Geographic</channel>
+</channels>
