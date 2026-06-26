@@ -45,6 +45,7 @@ A household wants to record free-to-air DVB-T/T2 broadcasts and watch them on lo
 3. The hook appends the recording path to `/transcoder/queue/transcode-queue.jsonl`.
 4. At `TRANSCODE_CRON`, the `transcoder` container runs `nightly-transcode.sh`.
 5. The script reads the queue, transcodes each `.ts` to H.264/AAC MP4 under `/media/transcoded/`, and preserves the original `.ts`.
+6. After a successful transcode it runs `generate-nfo.py`, which reads the TVHeadend DVR log for that recording and writes Jellyfin-compatible `tvshow.nfo` and episode `.nfo` files. The `.mp4` is renamed to `Show SxxExx - Title.mp4` so Jellyfin's metadata lookup identifies it as a TV episode.
 
 ## Why a separate transcoder container?
 
@@ -54,6 +55,17 @@ TVHeadend can transcode recordings itself with stream profiles, but doing so dur
 - preserves the original transport stream,
 - uses a plain ffmpeg pipeline that is easier to tune than TVH's internal transcode logic,
 - avoids TVH bugs such as broken MPEG-TS transcode flags in some versions.
+
+## Metadata for Jellyfin
+
+Jellyfin's filename-based metadata lookup easily mistakes recordings for movies (for example `Frendit` matched a movie called "Ihmeelliset frendit"). To prevent this, the transcoder:
+
+- mounts TVHeadend's DVR log directory (`/config/dvr/log`) read-only,
+- parses the original broadcast title and subtitle from the JSON log entry,
+- extracts Finnish season/episode markers such as `Kausi 4, 4/12` or `Kausi 31. Jakso 7-22`,
+- writes NFO files and renames the episode to `Show SxxExx - ...`.
+
+This causes Jellyfin to identify the item as a TV series episode and fetch the correct poster, fanart and episode metadata.
 
 ## Related projects
 

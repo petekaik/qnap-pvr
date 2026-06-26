@@ -51,6 +51,15 @@ Post-processor command: /transcoder/scripts/post-recording.sh %f
 
 Set `TRANSCODE_CRON` in `.env`. Default is daily at 02:00. During testing you can use `0 * * * *` (every hour).
 
+## Jellyfin metadata
+
+The transcoder writes two kinds of metadata next to each transcoded file:
+
+1. `tvshow.nfo` in the show directory.
+2. `<episode>.nfo` next to the `.mp4` file.
+
+It also renames episodes to `Show SxxExx - Title.mp4` so Jellyfin's built-in metadata lookup recognises them as TV episodes instead of guessing a movie title from the filename.
+
 ## License
 
 MIT
