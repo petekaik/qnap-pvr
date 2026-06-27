@@ -24,6 +24,6 @@ export LOG QUEUE
 # Use tail -F to follow new lines, then dispatch to N parallel workers.
 # xargs -P runs up to N instances concurrently.  Each instance processes
 # one line and exits, so the queue file is consumed as fast as capacity allows.
-tail -F -n 0 "$QUEUE" | xargs -0 -P "$WORKERS" -I {} /bin/sh /etc/transcoder/comskip-single.sh '{}'
+tail -F -n 0 "$QUEUE" | xargs -d '\n' -P "$WORKERS" -I {} /bin/sh /etc/transcoder/comskip-single.sh '{}'
 
 echo "$(date -Iseconds) comskip-pool stopped" >> "$LOG"

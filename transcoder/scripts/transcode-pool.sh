@@ -34,10 +34,7 @@ export LOG QUEUE DONE
 
 # Process the temp queue with N workers.  Failed entries are written back
 # to the original queue via the helper script.
-while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    printf '%s\0' "$line"
-done < "$QUEUE.tmp" | xargs -0 -P "$WORKERS" -I {} /bin/sh /etc/transcoder/transcode-single.sh '{}'
+cat "$QUEUE.tmp" | xargs -d '\n' -P "$WORKERS" -I {} /bin/sh /etc/transcoder/transcode-single.sh '{}'
 
 rm -f "$QUEUE.tmp"
 

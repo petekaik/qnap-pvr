@@ -57,7 +57,7 @@ if [ $rc -eq 0 ]; then
     final_mp4=$(python3 /etc/transcoder/generate-nfo.py "$cont_src" "$mp4" 2>&1)
     echo "$final_mp4" >> "$LOG"
 
-    final_base=$(echo "$final_mp4" | sed 's|\.mp4$||')
+    final_base=$(echo "$final_mp4" | tail -n1 | sed 's|\.mp4$||')
     if [ -f "$src_edl" ]; then
         cp "$src_edl" "${final_base}.edl" && echo "$(date -Iseconds) COPIED edl ${src_edl} -> ${final_base}.edl" >> "$LOG"
     fi
