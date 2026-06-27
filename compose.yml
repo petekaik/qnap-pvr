@@ -67,13 +67,47 @@ services:
       eth1:
         ipv4_address: ${LOCAL_IPV4_2}
 
-  transcoder:
+  comskip:
     image: pvr-transcoder:latest
     pull_policy: build
     build:
       context: ./transcoder
-    container_name: transcoder
-    hostname: transcoder
+    container_name: comskip
+    hostname: comskip
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    environment:
+      - TZ=${TZ}
+      - TRANSCODE_CRON=${TRANSCODE_CRON}
+      - COMSKIP_WORKERS=${COMSKIP_WORKERS}
+      - CONTAINER_ROLE=comskip
+    volumes:
+      - ${DATA}/media/recordings:/recordings
+      - ${DATA}/transcoder/scripts:/etc/transcoder:ro
+      - ${DATA}/transcoder/queue:/transcoder/queue
+      - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
+    networks:
+      - pvr_internal
+
+  transcode:
+    image: pvr-transcoder:latest
+    pull_policy: build
+    build:
+      context: ./transcoder
+    container_name: transcode
+    hostname: transcode
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -91,6 +125,8 @@ services:
     environment:
       - TZ=${TZ}
       - TRANSCODE_CRON=${TRANSCODE_CRON}
+      - TRANSCODE_WORKERS=${TRANSCODE_WORKERS}
+      - CONTAINER_ROLE=transcode
     volumes:
       - ${DATA}/media/recordings:/recordings
       - ${DATA}/media/transcoded:/media/transcoded
@@ -98,11 +134,15 @@ services:
       - ${DATA}/transcoder/queue:/transcoder/queue
       - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
     networks:
-      - pvr_default
+      - pvr_internal
 
 networks:
   eth1:
     external: true
     name: eth1
-  pvr_default:
-    name: pvr_default
+  pvr_internal:
+    name: pvr_internal
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16

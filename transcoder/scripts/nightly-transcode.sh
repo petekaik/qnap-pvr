@@ -32,7 +32,7 @@ if [ ! -f "$QUEUE" ]; then
 fi
 
 cp "$QUEUE" "$QUEUE.tmp"
-> "$QUEUE"
+> "$QUEUE.new"
 
 while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
@@ -40,6 +40,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     # Use Python for correct JSON parsing (unicode, escaped quotes).
     src=$(printf '%s\n' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])') || {
         echo "$(date -Iseconds) SKIP malformed JSON: $line" >> "$LOG"
+        printf '%s\n' "$line" >> "$QUEUE.new"
         continue
     }
 
@@ -47,7 +48,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 
     if [ ! -f "$cont_src" ]; then
         echo "$(date -Iseconds) SKIP missing $cont_src" >> "$LOG"
-        printf '%s\n' "$line" >> "$QUEUE"
+        printf '%s\n' "$line" >> "$QUEUE.new"
         continue
     fi
 
@@ -105,11 +106,13 @@ while IFS= read -r line || [ -n "$line" ]; do
     else
         echo "$(date -Iseconds) FAIL $src (rc=$rc)" >> "$LOG"
         tail -n 30 "$ffmpeg_log" >> "$LOG" 2>/dev/null || true
-        printf '%s\n' "$line" >> "$QUEUE"
+        printf '%s\n' "$line" >> "$QUEUE.new"
         rm -f "$mp4" "$ffmpeg_log"
     fi
 done < "$QUEUE.tmp"
 
+# Atomically replace the queue with any remaining pending items.
+mv "$QUEUE.new" "$QUEUE" 2>/dev/null || true
 rm -f "$QUEUE.tmp"
 
 echo "$(date -Iseconds) Transcode run finished" >> "$LOG"
