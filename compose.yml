@@ -132,8 +132,15 @@ services:
       - ${DATA}/comskip/etc:/etc/comskip:ro
       - ${DATA}/comskip/queue:/comskip/queue
       - ${DATA}/tmp:/pvr/tmp
-    networks:
-      - pvr_internal
+    # network_mode: none — this container has no use for any network
+    # at runtime. Communication with TVH happens through the shared
+    # ${DATA}/comskip/queue filesystem, not over TCP. The comskip
+    # binary does not phone home, the pool script does not fetch
+    # anything, and the entrypoint does not call out. Cutting the
+    # network means a compromised comskip binary cannot exfiltrate
+    # data or reach the host's other services. The build phase
+    # (docker build) uses its own build network and is unaffected.
+    network_mode: none
 
   transcode:
     image: pvr-transcode:latest
@@ -166,18 +173,16 @@ services:
       - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
       - ${DATA}/transcoder/scripts:/etc/transcoder:ro
       - ${DATA}/transcoder/queue:/transcoder/queue
-      - ${DATA}/media/transcoded:/media/transcoded
       - ${DATA}/tmp:/pvr/tmp
-    networks:
-      - pvr_internal
+    # network_mode: none — see comskip comment above. FFmpeg reads
+    # only local files, generate-nfo.py only calls a local Jellyfin
+    # URL through the shared /media/transcoded filesystem (it does
+    # not actually call the Jellyfin HTTP API at runtime — the
+    # JELLYFIN_API_KEY env var is reserved for future use), and
+    # the pool/entrypoint scripts do no network I/O.
+    network_mode: none
 
 networks:
   eth1:
     external: true
     name: eth1
-  pvr_internal:
-    name: pvr_internal
-    internal: true
-    ipam:
-      config:
-        - subnet: 172.25.0.0/16

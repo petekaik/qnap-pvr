@@ -77,3 +77,22 @@ the section for whatever service they are debugging.
   disappear mid-flight. Side effect: a later recording that
   reuses the same path is actually re-processed (was silently
   skipped before because the old path was still in done).
+
+### Security
+
+- **Post-processing containers run with no network interface.**
+  Comskip and transcode now declare `network_mode: none` in
+  `compose.yml`, replacing the previous `internal: true` bridge
+  (`pvr_internal`). The old setup still attached every container
+  to Compose's default `bridge` network (internal: true only
+  blocks the default gateway, not the implicit bridge), so a
+  vulnerability in FFmpeg's demuxer or comskip's commercial
+  detection code could still reach the LAN, the Jellyfin admin
+  API, or the host's other services. `network_mode: none` is
+  the most explicit way to say "this container does not network"
+  — it removes the attack surface entirely with zero functional
+  cost, since communication with TVH happens exclusively through
+  shared filesystem queues. The `pvr_internal` network block
+  was removed from `compose.yml` and the Mermaid container
+  diagram updated. Build-time networking (`docker build`) is
+  unaffected — build uses its own network.

@@ -46,7 +46,7 @@ flowchart TB
             jf["jellyfin<br/>LOCAL_IPV4_2<br/><br/>live TV<br/>recordings<br/>HTSP / DLNA"]:::pvrNode
         end
 
-        subgraph pvr_int["pvr_internal<br/>(internal bridge)"]
+        subgraph no_net["network_mode: none<br/>(no network interface)"]
             cs["comskip<br/>tail -F queue<br/>single-threaded<br/>nice 19"]:::pvrNode
             tr["transcode<br/>cron-driven<br/>drain queue<br/>profile-based ffmpeg"]:::pvrNode
         end
@@ -76,12 +76,12 @@ flowchart TB
     classDef host fill:#f8f9fa,stroke:#dee2e6,color:#000
 ```
 
-The two subnet namespaces (`eth1` macvlan, `pvr_internal` bridge) are
-declared in `compose.yml`. TVHeadend and Jellyfin attach to `eth1` to
-get fixed LAN IPs visible to clients; comskip and transcode live on
-`pvr_internal`, which has no default route out of the host. They
+TVHeadend and Jellyfin attach to `eth1` (the macvlan) to get fixed
+LAN IPs visible to clients; comskip and transcode run with
+`network_mode: none` — no network interface at all. They
 collaborate purely through the queue files on host volumes, never
-through TCP.
+through TCP. See [the Networks section](#networks) for the
+rationale.
 
 ## Build-time layering
 
@@ -267,12 +267,37 @@ docker network create -d macvlan \
 
 `compose.yml` references it as `external: true`.
 
-### `pvr_internal` (internal bridge)
+### Comskip and transcode: `network_mode: none`
 
-Subnet `172.25.0.0/16` (declared in `compose.yml`), `internal: true`.
-Comskip and transcode attach here. No route out of the host — they
-communicate with TVH through the shared queue files on host volumes,
-never over the network.
+These two containers have no network interface at all at runtime.
+`compose.yml` declares `network_mode: none` on each. The choice is
+deliberate:
+
+- **They do not need a network.** Communication between TVH and the
+  workers is exclusively through shared filesystem queues
+  (`${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`).
+  Neither side ever opens a socket. comskip's binary does not
+  phone home, FFmpeg only reads/writes local files, and the
+  pool/entrypoint scripts have no `curl`, `wget`, `nslookup` or
+  other network calls.
+- **It removes attack surface.** A compromised comskip or
+  transcode binary — or a vulnerability in FFmpeg's demuxer —
+  cannot reach the LAN, the Jellyfin admin API, the QNAP
+  management UI, or any other container. The kernel still
+  applies the container's filesystem permissions, so shared
+  queue files are still accessible, but anything off-host is
+  unreachable.
+- **It removes a whole class of "phantom" network configuration.**
+  Earlier versions of this stack used an `internal: true` bridge
+  (`pvr_internal`) for the same purpose, but Compose still
+  attaches every container to a default `bridge` network unless
+  you opt out, and `internal: true` only blocks the *default
+  gateway* — not the implicit bridge. `network_mode: none` is
+  the most explicit way to say "this container does not network".
+
+Build-time networking is unaffected: `docker build` uses its own
+build network to fetch apt packages and is independent of the
+runtime network mode.
 
 ## Volumes on the host
 

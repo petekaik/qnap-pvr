@@ -10,8 +10,8 @@ containers consume the queue:
     Jellyfin can skip them on playback.
   - **transcode** converts the `.ts` recordings to H.264 MP4. Encoding
     runs as a separate transcode pass with profile-based settings. Both
-    containers share a writable `pvr_internal` network and reach the host
-    recordings via bind mounts.
+    containers run with `network_mode: none` (no network interface) and
+    reach the host recordings via bind mounts.
 
 The originals are preserved. Jellyfin serves both live TV and the
 recordings.
@@ -33,8 +33,9 @@ inherit the same packages without re-installing them on every build.
 TVHeadend and Jellyfin get fixed IPs from a `macvlan` network (`eth1`).
 Comskip and transcode communicate with TVHeadend via JSONL files in
 `${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`, both mounted
-into the TVH container. They live on a private Docker network
-(`pvr_internal`) that has no route out of the host.
+into the TVH container. The two worker containers run with
+`network_mode: none` — no network interface at all — so the queues
+are the only communication channel between them.
 
 ## Quick start
 
@@ -250,24 +251,31 @@ your host's package manager or write the snippet manually).
 ## Network
 
 ```
-┌─ <lan-iface> (macvlan) ───────────────────┐  ┌─ pvr_internal (bridge) ────┐
-│  <tvheadend-ip>   tvheadend                │  │  comskip                   │
-│  <jellyfin-ip>    jellyfin                 │  │  transcode                 │
-└────────────────────────────────────────────┘  └─────────────────────────────┘
-                  ▲                                  ▲
-                  └────── both share queue ──────────┘
-                          files on host
+┌─ <lan-iface> (macvlan) ──────────────────────┐  ┌─ network_mode: none ─────┐
+│  <tvheadend-ip>   tvheadend                  │  │  comskip                 │
+│  <jellyfin-ip>    jellyfin                   │  │  transcode               │
+└──────────────────────────────────────────────┘  └──────────────────────────┘
+                       ▲                          ▲
+                       └────── share queue ───────┘
+                              files on host
 ```
 
-The IP addresses come from `.env` (`LOCAL_IPV4_1`, `LOCAL_IPV4_2`),
-the parent interface comes from the `docker network create` command
-in step 3 of the quick start. The actual subnet and gateway you use
-depend on your LAN topology.
+TVHeadend and Jellyfin attach to a macvlan network (`eth1`) so
+they get fixed LAN IPs visible to clients on the home network.
+Comskip and transcode run with `network_mode: none` — they have
+no network interface at all. Communication between TVH and the
+workers happens entirely through shared filesystem queues
+(`${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`); no
+container ever opens a socket to another container. See
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#networks) for the
+full rationale.
 
-TVHeadend and Jellyfin use a Docker `macvlan` network (`eth1`) to get
-fixed LAN IPs. Comskip and transcode live on an internal bridge network
-(`pvr_internal`, `internal: true`) with no route out of the host — they
-only need to read files mounted from `${DATA}`.
+TVHeadend and Jellyfin use a Docker `macvlan` network (`eth1`) to
+get fixed LAN IPs. Comskip and transcode run with `network_mode: none`
+— they have no network interface at all. They only need to read
+files mounted from `${DATA}`. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#networks)
+for the full rationale on why this is more secure than the previous
+`internal: true` bridge setup.
 
 ## Security considerations
 
@@ -285,6 +293,10 @@ only need to read files mounted from `${DATA}`.
   permission is scoped to that single service.
 - `tvh-healthcheck.sh` is mounted read-only and probes only `/dev/dvb`,
   never the application config.
+- Comskip and transcode run with `network_mode: none` — they have
+  no network interface at all, so a vulnerability in FFmpeg's
+  demuxer or in comskip's commercial-detection code cannot reach
+  the LAN, the Jellyfin admin API, or the QNAP management UI.
 
 ## Related projects
 

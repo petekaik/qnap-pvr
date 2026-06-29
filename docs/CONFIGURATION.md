@@ -110,10 +110,10 @@ The single source of truth for service topology. Important pieces:
 - `eth1` — external macvlan, declared in `compose.yml` as
   `external: true`. TVH and Jellyfin attach here to get fixed LAN IPs.
   Create on the host before `docker compose up -d`.
-- `pvr_internal` — internal bridge (subnet `172.25.0.0/16`,
-  `internal: true`). Comskip and transcode live here. There is no
-  route out of the host; they only need to read the bind-mounted
-  recordings and queues.
+- (none — Comskip and transcode run with `network_mode: none` in
+  `compose.yml` so they have no network interface at all. They
+  communicate with TVH exclusively through the bind-mounted
+  queue files; no socket is ever opened.)
 
 ### `build.sh`
 
