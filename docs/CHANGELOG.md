@@ -78,6 +78,20 @@ the section for whatever service they are debugging.
   reuses the same path is actually re-processed (was silently
   skipped before because the old path was still in done).
 
+### Fixed
+
+- **prune-done crashed when every entry was kept.** The
+  `prune-done` subcommand in both `comskip-pool.sh` and
+  `transcode-pool.sh` wrote a new done-list to a temp file,
+  then `mv`ed it over the original. If every entry was kept
+  (none dropped) the temp file was never created, so the `mv`
+  failed with `cannot stat ... No such file or directory`. On
+  QNAP this printed a noisy error to `transcode-nightly.log`
+  and on any future `set -e`-aware shell would have killed
+  the script mid-prune. Touch the temp file up-front so `mv`
+  always has a source. Caught during the post-restart
+  validation run on 2026-06-30.
+
 ### Security
 
 - **Post-processing containers run with no network interface.**

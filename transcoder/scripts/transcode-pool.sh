@@ -63,6 +63,12 @@ prune_done() {
     fi
 
     _tmp="${DONE}.tmp.$$"
+    # Touch the temp file up-front so the mv below always has a
+    # source. Without this, when every entry is kept (none dropped),
+    # the while loop never writes to $_tmp, mv fails with "cannot stat",
+    # and set -e would kill the script. We only want to mv if we
+    # actually produced a new file.
+    : > "$_tmp"
     _kept=0
     _dropped=0
     while IFS= read -r path; do
