@@ -92,6 +92,27 @@ the section for whatever service they are debugging.
   always has a source. Caught during the post-restart
   validation run on 2026-06-30.
 
+- **Transcode pool lost queued work after crash.** The drain
+  step (`cp queue tmp; : > queue; while read tmp`) was
+  vulnerable to mid-flight crashes: if FFmpeg was SIGKILLed
+  or the host rebooted before `rm tmp` ran, the next pool
+  invocation saw an empty queue plus an orphan tmp with N
+  untouched lines — those lines were effectively lost until
+  a human manually moved the tmp back. Added a
+  `recover-orphaned-tmp` subcommand to `transcode-pool.sh`
+  that appends any orphan tmp back into the queue and
+  removes it. The entrypoint runs this BEFORE the initial
+  pool run, so the recovered lines are part of the same
+  drain cycle. Idempotency: a line recovered from tmp whose
+  source is also in the done-list is skipped on the next
+  pool run by the existing done-check, so the worst case
+  is one extra FFmpeg invocation with deterministic output
+  going to the same path. Verified on QNAP after restart
+  with 5 lines recovered from a previous orphan tmp.
+  Comskip does not need an equivalent: its `tail -F`
+  follower never writes a tmp file, so there is no orphan
+  state to recover.
+
 ### Security
 
 - **Post-processing containers run with no network interface.**

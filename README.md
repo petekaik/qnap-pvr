@@ -146,14 +146,29 @@ So the container restart sequence is: catch up on whatever was
 queued → forget about deleted recordings → start watching for new
 work.
 
-The transcode container has the same restart-safety built in: its
-`entrypoint.sh` runs `transcode-pool.sh prune-done` once on start
-(drop entries whose source no longer exists) and then `transcode-pool.sh
-run` to drain anything already queued. The cron tick installs a
-scheduled `run` (no prune) so the done-list is cleaned only at
-container boundaries, not in the middle of a busy day. So a
-container restart never loses queued work, and the done-list does
-not grow forever as recordings are deleted in TVH.
+The transcode container has the same restart-safety built in,
+plus one extra step for the failure mode the drain's
+`cp queue tmp; : > queue` design introduces. Its `entrypoint.sh`
+runs three subcommands on every start:
+
+1. `recover-orphaned-tmp` — if a previous run died mid-flight
+   (FFmpeg SIGKILL, host reboot, OOM kill, NAS crash), the
+   drain step left `transcode-queue.jsonl.tmp` on disk with
+   untouched lines. This appends them back to the queue and
+   removes the tmp. Without this, those lines would sit on
+   disk forever and a human would have to manually move the
+   tmp back into the queue.
+2. `prune-done` — drops entries from `transcode-queue.done`
+   whose source no longer exists. Same rationale as comskip's.
+3. `run` — drains whatever is already queued, including any
+   lines recovered in step 1.
+
+The cron tick installs a scheduled `run` (no recover, no prune)
+so the done-list is cleaned only at container boundaries, not
+in the middle of a busy day. So a container restart — or even
+a hard crash mid-transcode — never loses queued work, and the
+done-list does not grow forever as recordings are deleted in
+TVH.
 
 ## Configuration
 

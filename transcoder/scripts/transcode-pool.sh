@@ -39,6 +39,59 @@ mkdir -p "$(dirname "$LOG")" "$(dirname "$DONE")" "$(dirname "$QUEUE")" "$(dirna
 [ -f "$DONE" ] || : > "$DONE"
 
 # -------------------------------------------------------------------
+# recover-orphaned-tmp — when a previous pool run died mid-flight
+# (FFmpeg SIGKILL on `docker compose restart`, host reboot, OOM
+# kill, NAS full-archive crash), the drain step did `cp queue tmp;
+# : > queue; while read tmp` and the script never reached the
+# `rm tmp` at the end. The next pool run sees an empty queue and
+# the tmp file with N untouched lines — those N lines are
+# effectively lost.
+#
+# recover_orphaned_tmp appends any non-empty tmp file back into
+# the queue, then removes the tmp. Idempotency: if a line in tmp
+# was already completed before the crash (FFmpeg wrote done and
+# only the tmp-rm was skipped), the next pool run's done-check
+# will skip it. Worst case is a duplicate ffmpeg invocation; the
+# output is deterministic given identical inputs and outputs go
+# to the same path, so overwrites are harmless.
+#
+# This must run BEFORE drain, so the recovered lines are picked
+# up by the same initial pool run.
+# -------------------------------------------------------------------
+recover_orphaned_tmp() {
+    # No flock here: this runs at container start, well before
+    # any other pool run can be active. Locking would only matter
+    # if two pool invocations raced, which entrypoint.sh prevents.
+
+    # Two distinct cases for an orphaned tmp:
+    #   - TMP exists and has lines: requeue them, then rm.
+    #   - TMP exists but is empty: this can happen if the previous
+    #     pool did `cp queue tmp; : > queue` and then died before
+    #     the read loop ever started — the cp created an empty
+    #     placeholder file. Remove it so it does not haunt us.
+    #   - TMP does not exist: clean cold start, nothing to do.
+    if [ ! -e "$TMP" ]; then
+        return 0
+    fi
+
+    _count=$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')
+    _count=${_count:-0}
+
+    if [ "$_count" -gt 0 ]; then
+        # Append tmp contents back to the queue. If new lines were
+        # appended to queue while this orphaned tmp was sitting there,
+        # we must not clobber them — we APPEND.
+        cat "$TMP" >> "$QUEUE"
+        rm -f "$TMP"
+        echo "$(date -Iseconds) transcode-pool recover-orphaned-tmp: requeued $_count line(s) from abandoned drain" >> "$LOG"
+    else
+        # Empty tmp: remove it. No log line — this is a routine
+        # cleanup, not a noteworthy event.
+        rm -f "$TMP"
+    fi
+}
+
+# -------------------------------------------------------------------
 # prune-done — drop entries from transcode-queue.done whose source
 # no longer exists on disk. Run on container start so the done-list
 # does not grow unboundedly as recordings are deleted in TVH, and
@@ -85,18 +138,20 @@ prune_done() {
     echo "$(date -Iseconds) transcode-pool prune-done: kept $_kept, dropped $_dropped (source missing)" >> "$LOG"
 }
 
-# Top-level subcommand dispatch. We handle prune-done here (before
-# config is loaded, before the "queue empty" early-exit) because
-# it does not depend on any config value. The `run` subcommand is
-# the default and falls through to the main loop below.
+# Top-level subcommand dispatch. We handle the no-config-needed
+# subcommands (recover-orphaned-tmp, prune-done) here, before
+# config is loaded and before the "queue empty" early-exit.
+# The `run` subcommand is the default and falls through to the
+# main loop below.
 case "${1:-run}" in
-    run)        ;;  # fall through to existing main loop below
-    prune-done) prune_done; exit 0 ;;
+    run)                  ;;  # fall through to existing main loop below
+    recover-orphaned-tmp) recover_orphaned_tmp; exit 0 ;;
+    prune-done)           prune_done; exit 0 ;;
     *)
         # The lock and queue dirs exist by this point, so it is
         # safe to log to $LOG. We do not need config to write a
         # rejection message.
-        echo "$(date -Iseconds) transcode-pool: unknown subcommand '$1' (use run|prune-done)" >> "$LOG"
+        echo "$(date -Iseconds) transcode-pool: unknown subcommand '$1' (use run|prune-done|recover-orphaned-tmp)" >> "$LOG"
         exit 2
         ;;
 esac
