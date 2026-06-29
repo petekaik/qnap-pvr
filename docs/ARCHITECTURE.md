@@ -9,118 +9,134 @@ where CPU-intensive work must be split into independent units.
 A household records free-to-air DVB-T/T2 broadcasts and watches them
 on local network clients.
 
+```mermaid
+flowchart TB
+    user(["Home users<br/>(phones, tablets, smart TVs)"])
+    antenna([DVB-T/T2<br/>antenna])
+    pvr["PVR Stack<br/>(Docker on QNAP/NAS)"]
+    github[(GitHub: petekaik/qnap-pvr)]
+    upstream((HTSP / DLNA<br/>home network))
+
+    antenna -- "broadcast signal" --> pvr
+    user -- "operates" --> pvr
+    pvr -- "live TV + recordings" --> upstream
+    user -- "watches via" --> upstream
+    github -- "git clone + pull" --> pvr
 ```
-┌──────────────┐     DVB-T/T2     ┌─────────────────────────────────────┐
-│  Antenna     │─────────────────▶│  PVR Stack (Docker on QNAP/NAS)     │
-└──────────────┘                  │                                     │
-                                 │  TVHeadend, Jellyfin, comskip,      │
-┌──────────────┐                  │  transcode                          │
-│  Home users  │◀─────────────────│                                     │
-│  (clients)   │  HTTP / DLNA /  │  Live TV, recordings, transcoded,    │
-│              │  HTSP            │  with commercial-skip metadata     │
-└──────────────┘                  └─────────────────────────────────────┘
-```
+
+The PVR stack itself is the focus of this document. The C4 Level 2
+detail below expands the green box into the four containers and the
+queue files they share.
 
 ## Containers (C4 Level 2)
 
+```mermaid
+flowchart TB
+    classDef pvrNode fill:#cfe2ff,stroke:#0d6efd,color:#000
+    classDef pvrDb fill:#e2e3e5,stroke:#6c757d,color:#000
+    classDef extNode fill:#fff3cd,stroke:#ffc107,color:#000
+
+    subgraph host["Docker Host (QNAP / NAS)"]
+        direction TB
+
+        subgraph eth1["macvlan network (eth1)"]
+            tvh["tvheadend<br/>192.168.1.52<br/><br/>DVB-T recording<br/>EPG<br/>post-processor"]:::pvrNode
+            jf["jellyfin<br/>192.168.1.53<br/><br/>live TV<br/>recordings<br/>HTSP / DLNA"]:::pvrNode
+        end
+
+        subgraph pvr_int["pvr_internal<br/>(internal bridge)"]
+            cs["comskip<br/>tail -F queue<br/>single-threaded<br/>nice 19"]:::pvrNode
+            tr["transcode<br/>cron-driven<br/>drain queue<br/>profile-based ffmpeg"]:::pvrNode
+        end
+
+        rec[("recordings/<br/>.ts files<br/>(preserved)")]:::pvrDb
+        mp4[("transcoded/<br/>.mp4 + .nfo + .edl<br/>(Jellyfin reads)")]:::pvrDb
+        csQ[("comskip-queue.jsonl<br/>+ .done")]:::pvrDb
+        trQ[("transcode-queue.jsonl<br/>+ .done")]:::pvrDb
+    end
+
+    antenna(["DVB-T/T2 antenna"]):::extNode
+    upstream[/"HTSP / DLNA<br/>home network"/]:::extNode
+
+    antenna -- "/dev/dvb (privileged)" --> tvh
+    tvh -- "rw bind<br/>writes .ts" --> rec
+    tvh -- "rw bind<br/>appends line" --> csQ
+    tvh -- "rw bind<br/>appends line" --> trQ
+    cs -- "rw bind<br/>reads queue" --> csQ
+    cs -- "ro bind<br/>reads .ts" --> rec
+    tr -- "rw bind<br/>drains queue" --> trQ
+    tr -- "ro bind<br/>reads .ts" --> rec
+    tr -- "rw bind<br/>writes .mp4" --> mp4
+    jf -- "ro bind<br/>reads .ts" --> rec
+    jf -- "ro bind<br/>reads .mp4" --> mp4
+    jf -- "streams" --> upstream
+
+    classDef host fill:#f8f9fa,stroke:#dee2e6,color:#000
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Docker Host                                    │
-│                                                                             │
-│  ┌────────────────────────┐    ┌────────────────────────┐                    │
-│  │  External macvlan      │    │  Internal bridge        │                    │
-│  │  (network "eth1")      │    │  (network "pvr_internal"│                    │
-│  │                        │    │   internal: true)       │                    │
-│  │  ┌──────────────────┐  │    │  ┌──────────────────┐  │                    │
-│  │  │   tvheadend      │  │    │  │     comskip     │  │                    │
-│  │  │  192.168.1.52   │  │    │  │   (pvr-comskip) │  │                    │
-│  │  │                  │  │    │  │                  │  │                    │
-│  │  │ Records DVB-T    │  │    │  │ tail -F queue    │  │                    │
-│  │  │ Runs post-       │  │    │  │ single-thread   │  │                    │
-│  │  │ processor hook   │  │    │  │ nice 19          │  │                    │
-│  │  └────────┬─────────┘  │    │  └─────────┬────────┘  │                    │
-│  │           │            │    │            │           │                    │
-│  │  ┌────────▼─────────┐  │    │  ┌─────────▼────────┐  │                    │
-│  │  │    jellyfin      │  │    │  │    transcode     │  │                    │
-│  │  │  192.168.1.53   │  │    │  │ (pvr-transcode)  │  │                    │
-│  │  │                  │  │    │  │                  │  │                    │
-│  │  │ Live TV +        │  │    │  │ Drain queue      │  │                    │
-│  │  │ recordings       │  │    │  │ Profile-based    │  │                    │
-│  │  │ (HTSP, DLNA, web)│  │    │  │ FFmpeg           │  │                    │
-│  │  └──────────────────┘  │    │  └──────────────────┘  │                    │
-│  └────────────────────────┘    └────────────────────────┘                    │
-│                                                                             │
-│                        Shared host volumes                                  │
-│                                                                             │
-│    ${DATA}/media/recordings      ──┬── /recordings                           │
-│    ${DATA}/media/transcoded      ──┼── /media/transcoded                     │
-│    ${DATA}/comskip/queue/        ──┤                                        │
-│    ${DATA}/transcoder/queue/     ──┤                                        │
-│    ${DATA}/transcoder/scripts/   ──┤   /etc/transcoder                       │
-│    ${DATA}/scripts/post-recording.sh                                      │
-│                                    ──  /pvr/scripts/post-recording.sh       │
-│    ${DATA}/scripts/config-loader.sh                                       │
-│                                    ──  /usr/local/bin/config-loader.sh       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+The two subnet namespaces (`eth1` macvlan, `pvr_internal` bridge) are
+declared in `compose.yml`. TVHeadend and Jellyfin attach to `eth1` to
+get fixed LAN IPs visible to clients; comskip and transcode live on
+`pvr_internal`, which has no default route out of the host. They
+collaborate purely through the queue files on host volumes, never
+through TCP.
 
 ## Build-time layering
 
 The two specialised worker images (`pvr-comskip`, `pvr-transcode`)
 share a base layer so packages only install once.
 
-```
-                    Debian + ffmpeg + python3 + cron
-                    ┌─────────────────────────┐
-                    │       pvr-base           │
-                    └────────────┬────────────┘
-                                 │
-                ┌────────────────┴────────────────┐
-                │                                 │
-       ┌─────────▼─────────┐          ┌───────────▼───────────┐
-       │   pvr-comskip    │          │   pvr-transcode      │
-       │                  │          │                      │
-       │ comskip binary   │          │ transcode-pool.sh    │
-       │ comskip-pool.sh  │          │ generate-nfo.py      │
-       │ pvr-config-loader│          │ pvr-config-loader    │
-       └──────────────────┘          └──────────────────────┘
+```mermaid
+flowchart TB
+    base["pvr-base:latest<br/><br/>Debian + ffmpeg + python3 + cron<br/>(shared build cache layer)"]
+    cs["pvr-comskip:latest<br/><br/>comskip binary<br/>comskip-pool.sh<br/>pvr-config-loader.sh"]
+    tr["pvr-transcode:latest<br/><br/>transcode-pool.sh<br/>generate-nfo.py<br/>pvr-config-loader.sh"]
+
+    base --> cs
+    base --> tr
 ```
 
 `pvr-base` is not a service. It exists only as a Docker layer cache,
 controlled by `./build.sh`. Without it, every `pvr-comskip` rebuild
-would re-install Debian packages.
+would re-install Debian packages. The two specialised images are
+`FROM pvr-base`, so the rebuilt layer ships once and both images
+share it.
 
 ## Recording and post-processing flow
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant TVH as tvheadend
+    participant ComskipQ as comskip-queue.jsonl
+    participant TranscodeQ as transcode-queue.jsonl
+    participant Comskip as comskip<br/>(real-time tail -F)
+    participant Transcode as transcode<br/>(cron-driven, profile-based)
+
+    TVH->>TVH: 1. Recording finishes,<br/>   .ts file in /recordings/
+    TVH->>TVH: 2. Invoke /pvr/scripts/post-recording.sh %f
+    TVH->>TVH: 3. resolve_ts(<truncated %f>)
+    TVH->>ComskipQ: 4. Append {"path": ..., "added": ...}
+    TVH->>TranscodeQ: 5. Append {"path": ..., "added": ...}
+    Note over Comskip: tail -F -n 0 detects<br/>new line within seconds
+    Comskip->>ComskipQ: 6. Read new line
+    Comskip->>Comskip: 7. flock /pvr/tmp/comskip-pool.lock
+    Comskip->>Comskip: 8. Skip if path in .done<br/>   Skip if on commercial-free list
+    Comskip->>Comskip: 9. nice -n 19 comskip<br/>   --output=<dir> <ts><br/>   >> /dev/null 2>&1
+    Comskip->>Comskip: 10. If EDL exists or<br/>    exit was 0 → write .done
+    Comskip->>Comskip: 11. flock released
+    Note over Transcode: cron TRANSCODE_CRON<br/>fires next time
+    Transcode->>TranscodeQ: 12. flock + drain queue
+    Transcode->>Transcode: 13. For each line:<br/>    build_ffmpeg_cmd <profile>
+    Transcode->>Transcode: 14. ffprobe -select_streams s<br/>    (dvb_teletext detection)
+    Transcode->>Transcode: 15. nice -n 19 ffmpeg -threads 0
+    Transcode->>Transcode: 16. python3 generate-nfo.py
+    Transcode->>Transcode: 17. Copy .edl (non-empty),<br/>    .txt sidecars
+    Transcode->>Transcode: 18. Append path to .done
 ```
-┌───────────────┐
-│ TVHeadend     │
-│ records .ts   │
-└──────┬────────┘
-       │ recording finishes
-       ▼
-┌──────────────────────────────────────────────────────┐
-│ TVH invokes                                       ──▶│ /pvr/scripts/post-recording.sh %f
-│                                                   │   │
-│                                                   │   ├─ resolves truncated %f via
-│                                                   │   │   resolve_ts()  (TVH drops the
-│                                                   │   │    path at the first space in
-│                                                   │   │    long show titles)
-│                                                   │   │
-│                                                   │   ├─ appends one JSONL line to
-│                                                   │   │   /comskip/queue/comskip-queue.jsonl
-│                                                   │   │
-│                                                   │   └─ appends one JSONL line to
-│                                                       /transcoder/queue/transcode-queue.jsonl
-│
-│
-├──► /comskip/queue/comskip-queue.jsonl  (real time)
-│
-├──► /transcoder/queue/transcode-queue.jsonl  (cron, hourly)
-│
-▼
-```
+
+The diagram is intentionally fine-grained. The numbering on the
+left edge maps to the steps in the prose below the diagram.
 
 ### Comskip pipeline (real-time)
 

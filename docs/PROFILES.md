@@ -86,6 +86,20 @@ that is the most common way to break the FFmpeg invocation. See
 
 ## Profile reference
 
+A profile is selected by adding a `"profile": "<name>"` field to the
+queue line, or by leaving it empty and letting `default_profile` win:
+
+```mermaid
+flowchart LR
+    line["queue line<br/>(JSONL)"] --> hasProfile{"Has<br/>profile?"}
+    hasProfile -- "yes" --> useName["Use named profile"]
+    hasProfile -- "no" --> useDefault["Use config.yaml<br/>default_profile"]
+    useName --> pick["preservation<br/>| high_quality<br/>| web_720p<br/>| passthrough"]
+    useDefault --> pick
+    pick --> invoke["invoke resolve_profile<br/>+ build_ffmpeg_cmd"]
+    invoke --> run["nice -n 19 ffmpeg -threads 0"]
+```
+
 ### `preservation` (default)
 
 Use when you want a Jellyfin-friendly MP4 with the minimum possible

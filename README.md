@@ -136,6 +136,23 @@ Profiles are documented in detail in
 [`docs/PROFILES.md`](./docs/PROFILES.md). The full C4 architecture and
 data flow live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
+## How the documentation is rendered
+
+Architecture diagrams in this repository use
+[Mermaid](https://mermaid.js.org/) embedded directly in Markdown
+files. GitHub renders Mermaid natively — open `docs/ARCHITECTURE.md`
+on the GitHub web UI and the C4 container diagram, the build-time
+layering diagram, and the recording-and-post-processing sequence
+diagram will draw automatically. No extra tooling, no PNG artefacts
+to commit, no out-of-date diagram files.
+
+The PlantUML sources (`docs/diagrams/c4-*.puml`) are kept in the
+repo for editors that prefer PlantUML, but the canonical, always
+up-to-date diagrams are the Mermaid blocks in
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). When you change the
+architecture, edit the Mermaid in `ARCHITECTURE.md`; the PUML files
+are not the source of truth.
+
 ## Why a separate comskip container?
 
 Comskip runs whenever a new `.ts` appears in the queue. Spawning it as a
