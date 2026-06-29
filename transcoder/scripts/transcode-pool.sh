@@ -110,6 +110,38 @@ recover_orphaned_tmp() {
 }
 
 # -------------------------------------------------------------------
+# clean-orphaned-ffmpeg-logs — when a previous pool run is killed
+# mid-FFmpeg (SIGKILL on `docker compose restart`, host reboot,
+# OOM kill), the script never reaches its own `rm $ffmpeg_log`
+# cleanup at the end. The leftover ffmpeg-*.log files in /pvr/tmp
+# are stale (they describe a dead run) and just eat disk space.
+# Remove all ffmpeg-*.log files in the scratch dir on container
+# start. We use the PID suffix for our own run so we are
+# explicit about NOT touching it if it happens to exist
+# (it should not, but be defensive).
+# -------------------------------------------------------------------
+clean_orphaned_ffmpeg_logs() {
+    _scratch_dir=$(dirname "$LOCK")   # /pvr/tmp
+    _my_basename="ffmpeg-$$.log"
+    _removed=0
+    _bytes=0
+
+    for _f in "$_scratch_dir"/ffmpeg-*.log; do
+        [ -e "$_f" ] || continue
+        [ "$(basename "$_f")" = "$_my_basename" ] && continue
+        _size=$(wc -c < "$_f" 2>/dev/null | tr -d ' ')
+        _size=${_size:-0}
+        rm -f "$_f"
+        _removed=$((_removed + 1))
+        _bytes=$((_bytes + _size))
+    done
+
+    if [ "$_removed" -gt 0 ]; then
+        echo "$(date -Iseconds) transcode-pool clean-orphaned-ffmpeg-logs: removed $_removed stale log(s), reclaimed $_bytes bytes" >> "$LOG"
+    fi
+}
+
+# -------------------------------------------------------------------
 # prune-done — drop entries from transcode-queue.done whose source
 # no longer exists on disk. Run on container start so the done-list
 # does not grow unboundedly as recordings are deleted in TVH, and
@@ -164,12 +196,13 @@ prune_done() {
 case "${1:-run}" in
     run)                  ;;  # fall through to existing main loop below
     recover-orphaned-tmp) recover_orphaned_tmp; exit 0 ;;
+    clean-orphaned-ffmpeg-logs) clean_orphaned_ffmpeg_logs; exit 0 ;;
     prune-done)           prune_done; exit 0 ;;
     *)
         # The lock and queue dirs exist by this point, so it is
         # safe to log to $LOG. We do not need config to write a
         # rejection message.
-        echo "$(date -Iseconds) transcode-pool: unknown subcommand '$1' (use run|prune-done|recover-orphaned-tmp)" >> "$LOG"
+        echo "$(date -Iseconds) transcode-pool: unknown subcommand '$1' (use run|prune-done|recover-orphaned-tmp|clean-orphaned-ffmpeg-logs)" >> "$LOG"
         exit 2
         ;;
 esac

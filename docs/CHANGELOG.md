@@ -126,6 +126,21 @@ the section for whatever service they are debugging.
   (2) the directory listing tells you at a glance which
   tmp is "this run's" and which are leftovers.
 
+- **Stale FFmpeg stderr logs cleaned up on container start.**
+  Same crash mode as the orphan tmp: when a pool run is
+  killed mid-FFmpeg, the pool's own `rm $ffmpeg_log` at
+  the end of the loop never runs. Leftover `ffmpeg-*.log`
+  files in `/pvr/tmp` are dead-state — they describe a
+  process that no longer exists, and just eat disk space.
+  Added a `clean-orphaned-ffmpeg-logs` subcommand that
+  removes any `ffmpeg-*.log` in the scratch dir whose PID
+  suffix does not match the current pool's $$. Called
+  from `entrypoint.sh` between `recover-orphaned-tmp` and
+  `prune-done`. Verified on QNAP: cleared 5 stale logs,
+  freed ~7 MB. The cleanup is logged with the count and
+  the bytes reclaimed so the operator can see at a glance
+  how much was recovered.
+
 ### Security
 
 - **Post-processing containers run with no network interface.**

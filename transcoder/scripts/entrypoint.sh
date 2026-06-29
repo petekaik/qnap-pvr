@@ -56,6 +56,10 @@ echo "[entrypoint] recover orphaned tmp"
 /bin/sh /etc/transcoder/transcode-pool.sh recover-orphaned-tmp >> /var/log/transcode-nightly.log 2>&1 || \
     echo "[entrypoint] recover returned non-zero (continuing)"
 
+echo "[entrypoint] clean orphaned ffmpeg logs"
+/bin/sh /etc/transcoder/transcode-pool.sh clean-orphaned-ffmpeg-logs >> /var/log/transcode-nightly.log 2>&1 || \
+    echo "[entrypoint] clean-orphaned-ffmpeg-logs returned non-zero (continuing)"
+
 echo "[entrypoint] prune done-list"
 /bin/sh /etc/transcoder/transcode-pool.sh prune-done >> /var/log/transcode-nightly.log 2>&1 || \
     echo "[entrypoint] prune returned non-zero (continuing)"
