@@ -24,7 +24,13 @@ set -e
 
 CONFIG="/etc/transcoder/config.yaml"
 QUEUE="/transcoder/queue/transcode-queue.jsonl"
-TMP="/transcoder/queue/transcode-queue.jsonl.tmp"
+# The working temp file uses $$ (the shell's PID) so two parallel
+# pool invocations do not stomp on each other's temp. A surviving
+# tmp from a previous, killed invocation therefore has a *different*
+# PID in its name, which is how recover-orphaned-tmp distinguishes
+# "an active pool's temp" (this PID) from "a crashed pool's temp"
+# (any other PID).
+TMP="/transcoder/queue/transcode-queue.$$.tmp"
 DONE="/transcoder/queue/transcode-queue.done"
 LOG="/var/log/transcode-nightly.log"
 ERRORS="/transcoder/queue/errors.jsonl"
@@ -62,32 +68,44 @@ recover_orphaned_tmp() {
     # No flock here: this runs at container start, well before
     # any other pool run can be active. Locking would only matter
     # if two pool invocations raced, which entrypoint.sh prevents.
+    #
+    # With the PID-based tmp naming, "my" temp is
+    # /transcoder/queue/transcode-queue.$$.tmp. Any other
+    # transcode-queue.*.tmp file in the directory belongs to a
+    # *previous* pool that died (different PID). We recover those.
+    # We do NOT touch our own PID-named tmp — if it exists, this
+    # recovery is being called recursively or by mistake.
+    _my_tmp_basename="transcode-queue.$$.tmp"
+    _my_pid=$$
+    _recovered=0
+    _cleaned=0
 
-    # Two distinct cases for an orphaned tmp:
-    #   - TMP exists and has lines: requeue them, then rm.
-    #   - TMP exists but is empty: this can happen if the previous
-    #     pool did `cp queue tmp; : > queue` and then died before
-    #     the read loop ever started — the cp created an empty
-    #     placeholder file. Remove it so it does not haunt us.
-    #   - TMP does not exist: clean cold start, nothing to do.
-    if [ ! -e "$TMP" ]; then
-        return 0
-    fi
+    # Iterate over every transcode-queue.*.tmp file in the queue
+    # directory. sh's glob does not have a way to filter names, so
+    # we list the directory and pick out the matching ones.
+    _queue_dir=$(dirname "$QUEUE")
+    for _f in "$_queue_dir"/transcode-queue.*.tmp; do
+        # The glob expands to itself if no match; guard against that.
+        [ -e "$_f" ] || continue
 
-    _count=$(wc -l < "$TMP" 2>/dev/null | tr -d ' ')
-    _count=${_count:-0}
+        # Skip our own PID-named temp.
+        if [ "$(basename "$_f")" = "$_my_tmp_basename" ]; then
+            continue
+        fi
 
-    if [ "$_count" -gt 0 ]; then
-        # Append tmp contents back to the queue. If new lines were
-        # appended to queue while this orphaned tmp was sitting there,
-        # we must not clobber them — we APPEND.
-        cat "$TMP" >> "$QUEUE"
-        rm -f "$TMP"
-        echo "$(date -Iseconds) transcode-pool recover-orphaned-tmp: requeued $_count line(s) from abandoned drain" >> "$LOG"
-    else
-        # Empty tmp: remove it. No log line — this is a routine
-        # cleanup, not a noteworthy event.
-        rm -f "$TMP"
+        _count=$(wc -l < "$_f" 2>/dev/null | tr -d ' ')
+        _count=${_count:-0}
+
+        if [ "$_count" -gt 0 ]; then
+            cat "$_f" >> "$QUEUE"
+            _recovered=$((_recovered + _count))
+        fi
+        rm -f "$_f"
+        _cleaned=$((_cleaned + 1))
+    done
+
+    if [ "$_recovered" -gt 0 ] || [ "$_cleaned" -gt 0 ]; then
+        echo "$(date -Iseconds) transcode-pool recover-orphaned-tmp: requeued $_recovered line(s), cleaned $_cleaned orphan temp(s) (this pid=$$)" >> "$LOG"
     fi
 }
 

@@ -113,6 +113,19 @@ the section for whatever service they are debugging.
   follower never writes a tmp file, so there is no orphan
   state to recover.
 
+- **PID-based temp file naming.** The transcode pool's working
+  temp was a fixed name (`transcode-queue.jsonl.tmp`), so
+  during normal operation it looked identical to an orphan
+  tmp left behind by a crashed pool — impossible to tell
+  apart without timestamps. Renamed to
+  `transcode-queue.$$.tmp` (shell PID), and updated
+  `recover-orphaned-tmp` to scan the queue directory for any
+  `transcode-queue.*.tmp` that does NOT match its own PID
+  and treat those as orphans. Side benefits: (1) two parallel
+  pool invocations no longer stomp on each other's temp;
+  (2) the directory listing tells you at a glance which
+  tmp is "this run's" and which are leftovers.
+
 ### Security
 
 - **Post-processing containers run with no network interface.**
