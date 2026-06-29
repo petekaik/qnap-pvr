@@ -26,3 +26,6 @@ Thumbs.db
 # Docker artifacts.
 *.tar
 *.tar.gz
+
+# TVH upstream source — local build dependency only
+tvh-src/

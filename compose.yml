@@ -1,7 +1,23 @@
 services:
 
   tvheadend:
-    image: lscr.io/linuxserver/tvheadend:latest
+    # qnap-pvr fork — full source build of TVH (Alpine + CMake)
+    # with the Post-Processing tab baked into tvh.js.gz. The
+    # image is built locally from tvh-src/ via
+    #   docker build -t pvr-tvheadend:built -f Dockerfile .
+    # See pvr-tvhd/BUILD.md for the rebuild procedure.
+    #
+    # The fork adds:
+    #   - postproc.js  (Post-Processing tab + Status panel module)
+    #   - patched dvr.js and status.js that call tvheadend.postproc.*
+    #   - patched Makefile.webui that bundles postproc.js into
+    #     tvh.js.gz so the browser receives it as part of the
+    #     standard bundle.
+    #
+    # At runtime the webui fetches queue JSON from
+    # pvr-queue-exposer (reachable on pvr_internal network).
+    image: pvr-tvheadend:built
+    pull_policy: never
     container_name: tvheadend
     hostname: tvheadend
     restart: unless-stopped
@@ -64,8 +80,16 @@ services:
       retries: 5
       start_period: 60s
     networks:
+      # eth1 (macvlan) gives TVH its fixed LAN IP. pvr_internal
+      # connects it to pvr-queue-exposer so the webui's
+      # Post-Processing tab can fetch queue JSON via XHR. macvlan
+      # networks cannot talk to bridge networks directly, so we
+      # explicitly attach TVH to both — the macvlan interface
+      # gives the LAN-facing address, the bridge interface
+      # gives the inter-service channel.
       eth1:
         ipv4_address: ${LOCAL_IPV4_1}
+      pvr_internal:
 
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -182,7 +206,65 @@ services:
     # the pool/entrypoint scripts do no network I/O.
     network_mode: none
 
+  # pvr-queue-exposer — HTTP bridge that serves PVR queue files
+  # and logs as JSON. Read-only MVP: GET /api/* endpoints, no
+  # POST. Located on pvr_internal so both TVH (webui fetches it
+  # via XHR) and comskip/transcode (their queue dirs are mounted
+  # here) can reach it. Not on eth1 — that would expose the
+  # queue file paths to the LAN.
+  pvr-queue-exposer:
+    image: pvr-queue-exposer:latest
+    pull_policy: build
+    build:
+      context: ./pvr-queue-exposer
+    container_name: pvr-queue-exposer
+    hostname: pvr-queue-exposer
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+    environment:
+      - TZ=${TZ}
+      - COMSKIP_QUEUE=/comskip/queue/comskip-queue.jsonl
+      - COMSKIP_DONE=/comskip/queue/comskip-queue.done
+      - COMSKIP_LOG=/comskip/queue/comskip.log
+      - TRANSCODE_QUEUE=/transcoder/queue/transcode-queue.jsonl
+      - TRANSCODE_DONE=/transcoder/queue/transcode-queue.done
+      - TRANSCODE_LOG=/var/log/transcode-nightly.log
+    volumes:
+      # Same queue mounts as comskip and transcode — read-only
+      # is enough for MVP.
+      - ${DATA}/comskip/queue:/comskip/queue:ro
+      - ${DATA}/transcoder/queue:/transcoder/queue:ro
+      - ${DATA}/tvheadend/config/dvr/log:/var/log:ro
+    networks:
+      - pvr_internal
+    healthcheck:
+      # 127.0.0.1 (not localhost) to dodge Alpine IPv6-first
+      # DNS behaviour.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8765/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 networks:
+  pvr_internal:
+    name: pvr_internal
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
   eth1:
     external: true
     name: eth1

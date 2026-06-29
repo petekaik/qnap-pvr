@@ -1,8 +1,11 @@
 #!/bin/sh
 # Build all PVR images in the correct order:
-#   1. pvr-base:latest       - shared apt layer (debian + ffmpeg + python3 + ...)
-#   2. pvr-comskip:latest    - FROM pvr-base, adds comskip binary + pool scripts
-#   3. pvr-transcode:latest  - FROM pvr-base, adds transcode pool + generate-nfo
+#   1. pvr-base:latest        - shared apt layer (debian + ffmpeg + python3 + ...)
+#   2. pvr-comskip:latest     - FROM pvr-base, adds comskip binary + pool scripts
+#   3. pvr-transcode:latest   - FROM pvr-base, adds transcode pool + generate-nfo
+#   4. pvr-queue-exposer:latest - Alpine + Python 3.12 HTTP bridge for queue files
+#   5. pvr-tvheadend:latest   - qnap-pvr fork of lscr.io/linuxserver/tvheadend
+#                              with Post-Processing tab in the webui
 #
 # Usage:
 #   ./build.sh              # build with cache
@@ -30,5 +33,11 @@ docker build $CACHE_FLAG -t pvr-comskip:latest "$PROJECT_DIR/comskip"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-transcode"
 docker build $CACHE_FLAG -t pvr-transcode:latest "$PROJECT_DIR/transcoder"
 
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-queue-exposer"
+docker build $CACHE_FLAG -t pvr-queue-exposer:latest "$PROJECT_DIR/pvr-queue-exposer"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-tvheadend"
+docker build $CACHE_FLAG -t pvr-tvheadend:latest "$PROJECT_DIR/pvr-tvhd"
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] done"
-docker images | grep -E "^REPOSITORY|pvr-(base|comskip|transcode)" || true
+docker images | grep -E "^REPOSITORY|pvr-(base|comskip|transcode|queue-exposer|tvheadend)" || true
