@@ -137,10 +137,12 @@ resolve_profile() {
     # "null" is our YAML-friendly way to say "no scale filter". The
     # loader brings it through as the literal string "null"; here we
     # collapse it to empty so the builder can skip the -vf flag.
-    [ "$video_scale" = "null" ] && video_scale=""
-    # Likewise, empty subtitle.codec / .strategy means "no subtitles".
-    [ "$subtitle_codec" = "null" ] && subtitle_codec=""
-    [ "$subtitle_strategy" = "null" ] && subtitle_strategy=""
+    # We use `|| true` because `[ ... ] && cmd` returns non-zero
+    # when the comparison fails, and `set -e` would otherwise kill
+    # the pool on every non-null profile.
+    if [ "$video_scale" = "null" ]; then video_scale=""; fi
+    if [ "$subtitle_codec" = "null" ]; then subtitle_codec=""; fi
+    if [ "$subtitle_strategy" = "null" ]; then subtitle_strategy=""; fi
 }
 
 # Build the ffmpeg command line for a given profile.
