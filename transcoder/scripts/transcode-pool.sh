@@ -38,6 +38,63 @@ mkdir -p "$(dirname "$LOG")" "$(dirname "$DONE")" "$(dirname "$QUEUE")" "$(dirna
 [ -f "$QUEUE" ] || : > "$QUEUE"
 [ -f "$DONE" ] || : > "$DONE"
 
+# -------------------------------------------------------------------
+# prune-done — drop entries from transcode-queue.done whose source
+# no longer exists on disk. Run on container start so the done-list
+# does not grow unboundedly as recordings are deleted in TVH, and
+# so that a later recording reusing the same path is actually
+# re-processed (instead of silently skipped because the old path
+# was still in the done-list).
+#
+# Defined early because it is dispatched via the top-level
+# subcommand switch before config loading or the "queue empty"
+# early-exit runs.
+# -------------------------------------------------------------------
+prune_done() {
+    exec 9>"$LOCK"
+    if ! flock -n 9; then
+        echo "$(date -Iseconds) transcode-pool prune-done: already running, exiting" >> "$LOG"
+        return 0
+    fi
+
+    if [ ! -s "$DONE" ]; then
+        echo "$(date -Iseconds) transcode-pool prune-done: done-list empty" >> "$LOG"
+        return 0
+    fi
+
+    _tmp="${DONE}.tmp.$$"
+    _kept=0
+    _dropped=0
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if [ -f "$path" ]; then
+            printf '%s\n' "$path" >> "$_tmp"
+            _kept=$((_kept + 1))
+        else
+            _dropped=$((_dropped + 1))
+        fi
+    done < "$DONE"
+
+    mv "$_tmp" "$DONE"
+    echo "$(date -Iseconds) transcode-pool prune-done: kept $_kept, dropped $_dropped (source missing)" >> "$LOG"
+}
+
+# Top-level subcommand dispatch. We handle prune-done here (before
+# config is loaded, before the "queue empty" early-exit) because
+# it does not depend on any config value. The `run` subcommand is
+# the default and falls through to the main loop below.
+case "${1:-run}" in
+    run)        ;;  # fall through to existing main loop below
+    prune-done) prune_done; exit 0 ;;
+    *)
+        # The lock and queue dirs exist by this point, so it is
+        # safe to log to $LOG. We do not need config to write a
+        # rejection message.
+        echo "$(date -Iseconds) transcode-pool: unknown subcommand '$1' (use run|prune-done)" >> "$LOG"
+        exit 2
+        ;;
+esac
+
 # Load YAML loader early; we'll use it for config + per-line profile
 # parsing (it supports dotted paths into nested profile blocks).
 # shellcheck disable=SC1090
@@ -383,6 +440,12 @@ NICE_LEVEL="${nice_level:-19}"
 NFO_GENERATOR="${nfo_generator:-/etc/transcoder/generate-nfo.py}"
 COPY_EDL="${copy_edl:-true}"
 COPY_TXT="${copy_txt:-true}"
+
+# NOTE: prune-done is defined and dispatched near the top of this
+# file (before config loading and before the "queue empty" early
+# exit), so that it works on cold starts regardless of queue state.
+# The `run` subcommand falls through from that early dispatch and
+# continues with the main loop below.
 
 while IFS= read -r line; do
     [ -n "$line" ] || continue

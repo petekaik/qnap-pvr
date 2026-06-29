@@ -146,8 +146,13 @@ queued → forget about deleted recordings → start watching for new
 work.
 
 The transcode container has the same restart-safety built in: its
-`entrypoint.sh` runs the pool once on start (drain) and then on a
-cron schedule, so a container restart never loses queued work.
+`entrypoint.sh` runs `transcode-pool.sh prune-done` once on start
+(drop entries whose source no longer exists) and then `transcode-pool.sh
+run` to drain anything already queued. The cron tick installs a
+scheduled `run` (no prune) so the done-list is cleaned only at
+container boundaries, not in the middle of a busy day. So a
+container restart never loses queued work, and the done-list does
+not grow forever as recordings are deleted in TVH.
 
 ## Configuration
 

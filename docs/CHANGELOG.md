@@ -63,3 +63,17 @@ the section for whatever service they are debugging.
   Behaviour with missing source files is unchanged: a missing
   source produces a `SKIP missing source` log line and is not
   added to the done-list.
+
+- **Transcode done-list grew without bound.** The transcode
+  container's `entrypoint.sh` already drained the queue on start
+  and ran a periodic cron, so it never lost queued work, but its
+  done-list grew forever: every recording ever transcoded stayed
+  in `transcode-queue.done` even after the source `.ts` was
+  deleted in TVH. Added a `prune-done` subcommand to
+  `transcode-pool.sh` (mirroring comskip) and called it from
+  `entrypoint.sh` immediately before the initial `run`. The
+  prune is intentionally only at container boundaries, not on
+  the cron tick, so a busy day never sees done-list entries
+  disappear mid-flight. Side effect: a later recording that
+  reuses the same path is actually re-processed (was silently
+  skipped before because the old path was still in done).
