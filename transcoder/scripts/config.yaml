@@ -4,8 +4,8 @@
 # shell-only YAML loader at /usr/local/bin/pvr-config-loader.sh — no
 # python or yaml libraries needed at runtime.
 #
-# Edit on the host at
-#   /share/Programs/pvr/transcoder/scripts/config.yaml
+# Edit on the host at the path where you mounted
+# `./transcoder/scripts/` in compose.yml (e.g. `${DATA}/transcoder/scripts/`)
 # and restart the transcode container for changes to take effect.
 
 # Cron expression. Default: every hour. Override with TRANSCODE_CRON

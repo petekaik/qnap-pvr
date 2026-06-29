@@ -128,8 +128,10 @@ preservation:
 Notes:
   - CRF 15 is below the visibility threshold for 1080i/p H.264
     broadcast. The output is around 2–4x the size of CRF 23 for
-    a typical TV show. On a J1900 with `-threads 0` enabled, expect
-    roughly 25–35 min of encoding per 30 min of input.
+    a typical TV show. On a low-power host with `-threads 0`
+    enabled, expect roughly 25–35 min of encoding per 30 min of
+    input. On a desktop-class 8-core CPU this drops to roughly
+    8–12 min per 30 min of input.
   - `preset: slow` is slower than `medium` but uses better motion
     estimation. With `-threads 0` the parallel decode hides most of
     the cost on a 4-core host.
@@ -238,8 +240,7 @@ Notes:
   already logs when subs are dropped for dvb_teletext/dvb_subtitle,
   so adding the hook is a small change.
 - **Hardware acceleration** — `h264_qsv` / `h264_nvenc` are not
-  configured because they are not available on a stock QNAP TS-X51
-  (Celeron J1900, no QuickSync). The pool is set up so adding
+  configured by default. The pool is set up so adding
   `video.codec: h264_qsv` and the matching `extra:` flags would Just
-  Work on a host that has the appropriate Intel GPU exposed via
+  Work on a host that has the appropriate Intel / NVIDIA GPU exposed via
   `/dev/dri`.

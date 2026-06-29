@@ -21,8 +21,8 @@ from Git — copy from `.env.example` and fill in.
 | `API_KEY`          | transcode (NFO generator)| Jellyfin API key, used by `generate-nfo.py` to query recording metadata   |
 | `INTERVAL_SECONDS` | examples/epg-grabber     | Optional EPG grabber interval, ignored if that example is not deployed    |
 | `TRANSCODE_CRON`   | transcode service        | Cron expression for the transcode pool (`0 * * * *` by default = hourly)  |
-| `PVR_HOST_PREFIX`  | TVH post-recording       | When TVH invokes the hook with a host path, strip this prefix; default    |
-|                    |                          | `/share/Programs/pvr/media` so the hook normalises host paths to            |
+| `PVR_HOST_PREFIX`  | TVH post-recording       | When TVH invokes the hook with a host path, strip this prefix; default |
+|                    |                          | `${DATA}/media` so the hook normalises host paths to                      |
 |                    |                          | `/recordings/...` inside the container                                    |
 | `PVR_LOG_PATH`     | TVH post-recording       | Log path the hook writes to inside the TVH container, e.g.                 |
 |                    |                          | `/config/dvr/log/post-recording.log`                                      |
@@ -39,9 +39,10 @@ multi-threading:
   - `-filter_threads 0` (filter graph pool),
   - libx264 `-threads 0` (frame-level parallelism).
 
-On a J1900 (4 cores, 2 threads/core = 8 logical), this means one
-transcode fully utilises the host without contending with comskip or
-the TVH DVB demuxer.
+On a 4-core / 8-thread host (`threads = 2 × cores`) this means
+one transcode fully utilises the host without contending with
+comskip or the TVH DVB demuxer. On hosts with fewer cores, lower
+the thread counts proportionally.
 
 ## `compose.yml`
 
@@ -221,7 +222,9 @@ invocation time by `config-loader.sh`.
 
 ```yaml
 paths:
-  host_prefix:      "/share/Programs/pvr/media"
+  # Substitute the directory that holds your recordings on the
+  # host. This is the same path as ${DATA}/media in your .env.
+  host_prefix:      "${DATA}/media"
   container_prefix: "/recordings"
 
 log:

@@ -8,9 +8,9 @@
 # /usr/local/bin/config-loader.sh. No python or yaml libraries needed
 # in the TVH container.
 #
-# Edit on the host at
-#   /share/Programs/pvr/scripts/config.yaml
-# and restart tvheadend for changes to take effect.
+# Edit on the host at the path where you mounted `./scripts/`
+# in compose.yml (e.g. `${DATA}/scripts/`) and restart tvheadend
+# for changes to take effect.
 
 # Path mapping. host_prefix is the isäntä mount point for recordings,
 # container_prefix is the in-container path TVH passes to the hook.

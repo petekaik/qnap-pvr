@@ -32,3 +32,13 @@ the section for whatever service they are debugging.
   containers, not workers per container. FFmpeg internal threading
   (`-threads 0`, `-filter_threads 0`, libx264 `-threads 0`) replaces
   the multi-worker model.
+
+### Security
+
+- Stripped host-specific details from the documentation. Replaced
+  concrete `/share/Programs/pvr/...` paths with `${DATA}/...`,
+  concrete IPs (`192.168.1.52` / `.53`) with `LOCAL_IPV4_*`
+  placeholders, host-typo jargon (`TS-X51`, `Celeron J1900`,
+  `Hauppauge dualHD`) with hardware-agnostic wording. Added a
+  `Documentation hygiene` section to `README.md` with `grep`
+  checks to run before committing, so the leak does not recur.

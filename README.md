@@ -48,10 +48,14 @@ cp .env.example .env
 $EDITOR .env
 
 # 3. Create the macvlan network if it does not already exist.
+#    Replace the subnet/gateway/iface placeholders with values that
+#    match your LAN. Use an unused subnet (not your main LAN's
+#    subnet if you have one) so the macvlan addresses do not collide
+#    with DHCP-assigned IPs.
 docker network create -d macvlan \
-    --subnet=192.168.1.0/24 \
-    --gateway=192.168.1.1 \
-    -o parent=eth1 \
+    --subnet=<your-macvlan-subnet> \
+    --gateway=<your-lan-gateway> \
+    -o parent=<your-lan-iface> \
     eth1 || true
 
 # 4. Build and start.
@@ -194,7 +198,7 @@ and the dvb_teletext/dvb_subtitle handling rules.
 
 ## Logging
 
-- **Comskip log:** `/share/Programs/pvr/comskip/queue/comskip.log`
+- **Comskip log:** `${DATA}/comskip/queue/comskip.log`
   Contains only structured `RUN` / `OK` / `SKIP` / `EDL` / `FAIL` lines.
   Comskip's own per-frame progress (which is hundreds of lines per
   recording) is redirected to `progress_log`, which defaults to
@@ -217,14 +221,19 @@ your host's package manager or write the snippet manually).
 ## Network
 
 ```
-┌─ eth1 (macvlan) ───────────────────┐  ┌─ pvr_internal (bridge) ─────┐
-│  192.168.1.52  tvheadend           │  │  comskip                    │
-│  192.168.1.53  jellyfin            │  │  transcode                  │
-└────────────────────────────────────┘  └────────────────────────────┘
-                  ▲                              ▲
-                  └────── both share queue ──────┘
+┌─ <lan-iface> (macvlan) ───────────────────┐  ┌─ pvr_internal (bridge) ────┐
+│  <tvheadend-ip>   tvheadend                │  │  comskip                   │
+│  <jellyfin-ip>    jellyfin                 │  │  transcode                 │
+└────────────────────────────────────────────┘  └─────────────────────────────┘
+                  ▲                                  ▲
+                  └────── both share queue ──────────┘
                           files on host
 ```
+
+The IP addresses come from `.env` (`LOCAL_IPV4_1`, `LOCAL_IPV4_2`),
+the parent interface comes from the `docker network create` command
+in step 3 of the quick start. The actual subnet and gateway you use
+depend on your LAN topology.
 
 TVHeadend and Jellyfin use a Docker `macvlan` network (`eth1`) to get
 fixed LAN IPs. Comskip and transcode live on an internal bridge network
@@ -253,8 +262,38 @@ only need to read files mounted from `${DATA}`.
 - **DVB tuner drivers for QNAP:** https://github.com/petekaik/qnap-dvb
   Builds the kernel modules `em28xx`, `si2168`, `si2157`,
   `videobuf2-*` and the `dvb-demod-si2168-b40-01.fw` firmware that
-  TVHeadend needs to talk to a Hauppauge dualHD on a stock QNAP TS-X51
-  kernel (which ships no DVB drivers).
+  some QNAP kernels (which ship no DVB drivers) need in order to
+  expose Hauppauge / TBS / similar USB DVB tuners to TVHeadend.
+
+## Documentation hygiene
+
+This repository is intended to ship on public GitHub. Before you
+commit any change to the documentation, run these checks:
+
+```bash
+# 1. No host paths leaked into the docs.
+grep -rnE '/share/[A-Z]|/mnt/|/home/[a-z]+/|~/' README.md docs/ examples/
+
+# 2. No LAN IPs or subnets.
+grep -rnE '192\.168\.|10\.0\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.' README.md docs/ examples/
+
+# 3. No hostnames.
+grep -rnE '[a-z0-9-]+\.local\b|[a-z0-9-]+-nas\b|qnap|hostname' README.md docs/ examples/
+
+# 4. No firmware or vendor specifics that single out one host.
+grep -rnE 'J1900|TS-X51|TS-25[15]|Celeron J1900' README.md docs/ examples/
+```
+
+If any of these match, edit the offending line to use placeholders
+(`${DATA}/...`, `<lan-iface>`, `LOCAL_IPV4_*`, "low-power host")
+before committing. The principle is: a reader of this repo who
+is *not* the author should learn nothing about the author's specific
+network, disk layout, hardware vendor or firmware revision.
+
+Operator-only values — actual IP addresses, host paths, credentials,
+SSH ports, DDNS names — belong in the operator's private
+configuration (`docker-compose.override.yml`, `.env`, host scripts)
+and never in this repo.
 
 ## License
 

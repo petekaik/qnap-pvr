@@ -1,8 +1,10 @@
 # Architecture
 
 This document describes the PVR stack using the [C4 model](https://c4model.com/).
-The system runs on a low-power Docker host (QNAP TS-X51, Celeron J1900)
-where CPU-intensive work must be split into independent units.
+The system runs on a low-power Docker host where CPU-intensive work
+must be split into independent units. The example shapes in this
+document are deliberately abstract — substitute your own subnet,
+host CPU and macvlan interface name when deploying.
 
 ## Context (C4 Level 1)
 
@@ -36,12 +38,12 @@ flowchart TB
     classDef pvrDb fill:#e2e3e5,stroke:#6c757d,color:#000
     classDef extNode fill:#fff3cd,stroke:#ffc107,color:#000
 
-    subgraph host["Docker Host (QNAP / NAS)"]
+    subgraph host["Docker Host"]
         direction TB
 
-        subgraph eth1["macvlan network (eth1)"]
-            tvh["tvheadend<br/>192.168.1.52<br/><br/>DVB-T recording<br/>EPG<br/>post-processor"]:::pvrNode
-            jf["jellyfin<br/>192.168.1.53<br/><br/>live TV<br/>recordings<br/>HTSP / DLNA"]:::pvrNode
+        subgraph macvlan_net["macvlan network<br/>(name: eth1, iface: from your LAN)"]
+            tvh["tvheadend<br/>LOCAL_IPV4_1<br/><br/>DVB-T recording<br/>EPG<br/>post-processor"]:::pvrNode
+            jf["jellyfin<br/>LOCAL_IPV4_2<br/><br/>live TV<br/>recordings<br/>HTSP / DLNA"]:::pvrNode
         end
 
         subgraph pvr_int["pvr_internal<br/>(internal bridge)"]
@@ -240,15 +242,26 @@ path is then pushed to both queues.
 ### `eth1` (external macvlan)
 
 Fixed LAN IPs for TVHeadend and Jellyfin. Allows clients to find
-them without DNS or container IP discovery.
+them without DNS or container IP discovery. The values are read
+from `.env` at deploy time:
 
-Create once on the host before the first `docker compose up -d`:
+  - `LOCAL_IPV4_1` — TVHeadend container
+  - `LOCAL_IPV4_2` — Jellyfin container
+
+The network name `eth1` and the parent interface (`-o parent=`) must
+match the values you used when creating the macvlan below. The parent
+is usually your LAN's physical interface (e.g. `eth0`, `br0`,
+`eno1` — pick whatever your OS reports).
+
+Create the network once on the host before the first
+`docker compose up -d`. Replace the subnet, gateway and parent
+interface placeholders with your LAN's values:
 
 ```bash
 docker network create -d macvlan \
-    --subnet=192.168.1.0/24 \
-    --gateway=192.168.1.1 \
-    -o parent=eth1 \
+    --subnet=<your-macvlan-subnet> \
+    --gateway=<your-lan-gateway> \
+    -o parent=<your-lan-iface> \
     eth1
 ```
 
@@ -256,10 +269,10 @@ docker network create -d macvlan \
 
 ### `pvr_internal` (internal bridge)
 
-Subnet `172.25.0.0/16`, `internal: true`. Comskip and transcode
-attach here. No route out of the host — they communicate with TVH
-through the shared queue files on host volumes, never over the
-network.
+Subnet `172.25.0.0/16` (declared in `compose.yml`), `internal: true`.
+Comskip and transcode attach here. No route out of the host — they
+communicate with TVH through the shared queue files on host volumes,
+never over the network.
 
 ## Volumes on the host
 
@@ -281,12 +294,14 @@ partition and the persistent storage:
 | `${DATA}/tvheadend/config/dvr/log/`  | `/config/dvr/log`          | comskip + transcode (ro — read for NFO generation) |
 | `/dev/dvb`                           | `/dev/dvb`                 | tvheadend (direct device access, privileged)      |
 
-The `${DATA}/tmp/` shared scratch is a fix for the QNAP host's 64 MB
-ramdisk `/tmp`: a single FFmpeg run can write 30+ MB to stderr.
-Without this mount, the host's `/tmp` fills, the next cron run fails,
-and the container's `/tmp` is the same 64 MB. By moving locks and
-FFmpeg stderr dumps to `${DATA}/tmp` (the big volume), the
-constraint goes away.
+The `${DATA}/tmp/` shared scratch is an opt-in mount. Some NAS-class
+hosts (QNAP, Synology, Asustor, …) ship with a small tmpfs at
+`/tmp` — typically 32–128 MB. A single FFmpeg run can write 30+ MB
+to stderr; on those hosts the next cron run can fail when `/tmp` is
+full. By moving locks and FFmpeg stderr dumps to `${DATA}/tmp` (the
+big volume), the constraint goes away. On hosts where `/tmp` is a
+real filesystem (e.g. a Linux server with `tmpfs /tmp tmpfs
+size=4G`), the mount is not necessary and can be dropped.
 
 ## Profile selection
 

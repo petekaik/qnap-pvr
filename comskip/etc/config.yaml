@@ -5,8 +5,8 @@
 # subset of YAML used here: simple key: value pairs, dotted-path
 # nesting, and "- item" lists.
 #
-# Edit this file on the host at
-#   /share/Programs/pvr/comskip/etc/config.yaml
+# Edit this file on the host at the path where you mounted
+# `./comskip/etc/` in compose.yml (e.g. `${DATA}/comskip/etc/`)
 # and restart the comskip container (`docker compose restart comskip`)
 # for changes to take effect.
 
@@ -15,7 +15,7 @@ comskip_binary: /usr/local/bin/comskip
 comskip_ini: /etc/comskip/comskip.ini
 
 # Nice level for the comskip process. 19 = lowest priority, yields
-# gracefully to interactive workloads on a Celeron J1900.
+# gracefully to interactive workloads on a low-power host.
 nice_level: 19
 
 # Queue / log / done paths inside the container.
