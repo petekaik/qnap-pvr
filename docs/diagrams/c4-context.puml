@@ -5,13 +5,19 @@ LAYOUT_WITH_LEGEND()
 
 title PVR Stack - System Context Diagram
 
-Person(user, "Home user", "Watches live TV and recordings")
-System(pvr, "PVR Stack", "TVHeadend + Jellyfin + transcoder on Docker host")
-System_Ext(antenna, "DVB-T/T2 antenna", "Free-to-air broadcasts")
-System_Ext(clients, "Playback clients", "Browsers, apps, DLNA clients")
+Person(user, "Home user", "Watches live TV and recordings on home network devices")
 
-Rel(antenna, pvr, "Receives broadcast signal")
-Rel(user, clients, "Watches")
-Rel(clients, pvr, "Requests streams and files", "HTTP/DLNA")
+System(pvr, "PVR Stack", "TVHeadend + Jellyfin + comskip + transcode on a Docker host (QNAP)")
+
+System_Ext(antenna, "DVB-T/T2 antenna", "Free-to-air broadcast signal")
+System_Ext(clients, "Playback clients", "Browsers, mobile apps, smart TVs, DLNA clients")
+System_Ext(github, "GitHub", "Source repo: github.com/petekaik/qnap-pvr (and qnap-dvb for DVB drivers)")
+
+Rel(antenna, pvr, "Delivers broadcast", "DVB-T/T2 RF signal")
+Rel(user, clients, "Operates")
+Rel(clients, pvr, "Streams live TV + downloads recordings", "HTTP, HTSP, DLNA")
+Rel(github, pvr, "Provides source code", "git clone + pull")
+
+SHOW_LEGEND()
 
 @enduml

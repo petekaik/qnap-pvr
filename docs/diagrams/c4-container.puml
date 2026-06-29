@@ -8,26 +8,41 @@ title PVR Stack - Container Diagram
 Person(user, "Home user", "Watches live TV and recordings")
 
 System_Boundary(host, "Docker Host (QNAP / NAS)") {
-    Container(tvh, "tvheadend", "LinuxServer TVHeadend", "Records .ts files, manages EPG and tuners")
-    Container(jf, "jellyfin", "Jellyfin", "Serves live TV and recordings")
-    Container(trans, "transcoder", "Alpine + ffmpeg + dcron", "Transcodes .ts to .mp4 off-peak")
-    ContainerDb(queue, "transcode queue", "JSONL file", "Pending and done recordings")
-    ContainerDb(rec, "recordings", "Host filesystem", "Original .ts files")
-    ContainerDb(mp4, "transcoded", "Host filesystem", "H.264/AAC .mp4 files")
+
+    Container(tvh, "tvheadend", "LinuxServer TVHeadend", "Records .ts files, manages EPG and tuners, invokes post-recording hook")
+
+    Container(jf, "jellyfin", "Jellyfin", "Serves live TV and recordings over HTTP / HTSP")
+
+    Container(cs, "comskip", "pvr-comskip:latest", "Real-time commercial detection via tail -F on comskip-queue.jsonl, writes .edl files")
+
+    Container(tr, "transcode", "pvr-transcode:latest", "Cron-driven FFmpeg transcoding of .ts to .mp4, with profile-based settings")
+
+    ContainerDb(comskipQ, "comskip queue", "JSONL files on host", "/comskip/queue/comskip-queue.jsonl + .done")
+    ContainerDb(transcodeQ, "transcode queue", "JSONL files on host", "/transcoder/queue/transcode-queue.jsonl + .done")
+    ContainerDb(rec, "recordings", "Host filesystem", "Original .ts files preserved untouched")
+    ContainerDb(mp4, "transcoded", "Host filesystem", "H.264/AAC .mp4 files + .nfo + .edl + .jpg sidecars")
+    ContainerDb(scratch, "scratch", "Bind-mounted host dir", "/pvr/tmp: locks, FFmpeg stderr dumps, channel list")
 }
 
 System_Ext(antenna, "DVB-T/T2 antenna", "Broadcast signal")
-System_Ext(net, "Home network", "HTTP / DLNA clients")
+System_Ext(net, "Home network", "HTTP / DLNA / HTSP clients")
 
-Rel(antenna, tvh, "Broadcast signal")
+Rel(antenna, tvh, "Broadcast signal", "/dev/dvb (privileged)")
 Rel(user, net, "Watches")
-Rel(net, jf, "Streams and downloads", "HTTP")
-Rel(tvh, rec, "Writes .ts")
-Rel(tvh, queue, "Appends via post-processor")
-Rel(trans, queue, "Reads pending items")
-Rel(trans, rec, "Reads .ts")
-Rel(trans, mp4, "Writes .mp4")
-Rel(jf, rec, "Reads .ts")
-Rel(jf, mp4, "Reads .mp4")
+Rel(net, jf, "Streams and downloads", "HTTP / HTSP")
+Rel(tvh, rec, "Writes .ts", "rw bind mount")
+Rel(tvh, comskipQ, "Appends per-recording line", "rw bind mount")
+Rel(tvh, transcodeQ, "Appends per-recording line", "rw bind mount")
+Rel(cs, comskipQ, "Reads pending + writes .done", "rw bind mount")
+Rel(cs, rec, "Reads .ts", "ro bind mount")
+Rel(cs, scratch, "Lock + channels list", "rw bind mount")
+Rel(tr, transcodeQ, "Drains queue and writes .done", "rw bind mount")
+Rel(tr, rec, "Reads .ts", "ro bind mount")
+Rel(tr, mp4, "Writes .mp4 + sidecars", "rw bind mount")
+Rel(tr, scratch, "Lock + FFmpeg logs", "rw bind mount")
+Rel(jf, rec, "Reads .ts", "ro bind mount")
+Rel(jf, mp4, "Reads .mp4 + .nfo + .edl", "ro bind mount")
+
+SHOW_LEGEND()
 
 @enduml
