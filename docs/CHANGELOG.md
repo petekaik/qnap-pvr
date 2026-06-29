@@ -42,3 +42,24 @@ the section for whatever service they are debugging.
   `Hauppauge dualHD`) with hardware-agnostic wording. Added a
   `Documentation hygiene` section to `README.md` with `grep`
   checks to run before committing, so the leak does not recur.
+
+### Fixed
+
+- **Comskip restart lost queued work.** Previously, the comskip
+  container only ran `tail -F -n 0` on its queue — a naive tail
+  loop that does not replay lines already present at start time.
+  After a QNAP reboot, TVH's post-recording hook could append
+  entries to the queue while comskip was down, and they would
+  never be processed. Added a new `entrypoint.sh` that runs three
+  subcommands on every container start:
+    1. `drain` — process anything already queued.
+    2. `prune-done` — drop paths from the done-list whose source
+       no longer exists on disk (keeps the list from growing
+       forever; lets a reused path be re-processed).
+    3. `watch` — start the `tail -F` follower.
+  Refactored `comskip-pool.sh` to share a `process_line` core
+  between the drain and watch modes, and to expose the three
+  subcommands as arguments (`drain`, `prune-done`, `watch`).
+  Behaviour with missing source files is unchanged: a missing
+  source produces a `SKIP missing source` log line and is not
+  added to the done-list.

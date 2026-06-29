@@ -125,6 +125,30 @@ This is the idempotency guard: a job already in `.done` is skipped on
 the next run, regardless of how many times it appears in the queue
 file.
 
+### Comskip restart semantics
+
+`comskip-pool.sh` is a `tail -F` follower. A naive tail loop would
+only see **new** lines appended after start; lines that TVH queued
+while the container was down would be silently dropped on restart.
+The comskip container's `entrypoint.sh` therefore runs three
+subcommands on every start:
+
+1. `drain` — reads the whole queue once, processes every line,
+   empties the queue file.
+2. `prune-done` — drops entries from `comskip-queue.done` whose
+   source `.ts` no longer exists on disk. Keeps the done-list from
+   growing forever when you delete recordings in TVH, and lets a
+   later recording that reuses the same path be re-processed.
+3. `watch` — runs the `tail -F` loop in the background.
+
+So the container restart sequence is: catch up on whatever was
+queued → forget about deleted recordings → start watching for new
+work.
+
+The transcode container has the same restart-safety built in: its
+`entrypoint.sh` runs the pool once on start (drain) and then on a
+cron schedule, so a container restart never loses queued work.
+
 ## Configuration
 
 | File                                             | What it controls                                                         |

@@ -1,7 +1,21 @@
 #!/bin/sh
-# Comskip worker loop. Single-threaded, tail-driven.
+# Comskip worker loop. Single-threaded, POSIX-sh only.
 #
-# Reads /comskip/queue/comskip-queue.jsonl as new lines are appended.
+# Subcommands (default: watch):
+#   watch       Tail the queue and process new lines as they arrive.
+#   drain       Read the entire queue once, process every line, exit.
+#   prune-done  Remove paths from comskip-queue.done whose source
+#               .ts file no longer exists on disk.
+#
+# The container's entrypoint runs `drain` then `prune-done` once
+# before starting `watch` in the background. This guarantees that
+# nothing queued while the container was down is silently skipped,
+# and that the done-list does not grow forever with paths for
+# deleted recordings.
+#
+# Each queue line is a JSON object like:
+#   {"path":"/recordings/foo/foo.ts","channel":"Foo"}
+#
 # For each line:
 #   1. Check that the source .ts file still exists.
 #   2. Skip if it is in the done list (already processed).
@@ -10,8 +24,9 @@
 #   5. Append the path to comskip-queue.done so it is not re-processed.
 #
 # Comskip itself is single-threaded, so running multiple instances in
-# parallel just thrashes disk I/O without gaining speed. We use a single
-# sequential worker and rely on a flock to ensure only one pool runs.
+# parallel just thrashes disk I/O without gaining speed. We use a
+# single sequential worker and rely on a flock to ensure only one
+# pool runs.
 #
 # All configuration (binary path, log path, channel list) lives in
 # /etc/comskip/config.yaml. The container does NOT need python or any
@@ -23,7 +38,6 @@ CONFIG="/etc/comskip/config.yaml"
 QUEUE="/comskip/queue/comskip-queue.jsonl"
 DONE="/comskip/queue/comskip-queue.done"
 LOG="/comskip/queue/comskip.log"
-ERRORS="/comskip/queue/errors.jsonl"
 # Where comskip's own stdout (the per-frame progress spam) goes.
 # /dev/null = discard. A file path = keep for forensic debugging.
 # Set in config.yaml under "progress_log". Default: /dev/null.
@@ -65,58 +79,62 @@ case "$PROGRESS_LOG" in
     *) mkdir -p "$(dirname "$PROGRESS_LOG")" && : > "$PROGRESS_LOG" ;;
 esac
 
-exec 9>"$LOCK"
-if ! flock -n 9; then
-    echo "$(date -Iseconds) comskip-pool already running, exiting" >> "$LOG"
-    exit 0
-fi
+# Decide what to do based on the subcommand. The default is `watch`,
+# so the script can also be called without arguments (backwards
+# compatibility — and what `entrypoint.sh` uses to launch the
+# background watcher).
+CMD="${1:-watch}"
 
-echo "$(date -Iseconds) comskip-pool started" >> "$LOG"
+# -------------------------------------------------------------------
+# Common: parse one queue line, decide whether to skip or run.
+# Arguments: $1 = full queue line
+# Side effects: writes to LOG, may append to DONE, may invoke comskip.
+# This is intentionally a shell function (not exported) — POSIX sh
+# functions are visible inside the same script, so no `export -f`
+# (a bash-ism that breaks under dash/ash).
+# -------------------------------------------------------------------
+process_line() {
+    _line="$1"
+    [ -n "$_line" ] || return 0
 
-# tail -F -n 0 follows new lines as they are appended. We process
-# each line inline (no subprocess function) so the script works in
-# POSIX sh without `export -f`.
-tail -F -n 0 "$QUEUE" 2>/dev/null | while IFS= read -r line; do
-    [ -n "$line" ] || continue
-
-    path=$(printf '%s\n' "$line" | sed -n 's/.*"path" *: *"\([^"]*\)".*/\1/p')
-    if [ -z "$path" ]; then
-        echo "$(date -Iseconds) SKIP malformed line: $line" >> "$LOG"
-        continue
+    _path=$(printf '%s\n' "$_line" | sed -n 's/.*"path" *: *"\([^"]*\)".*/\1/p')
+    if [ -z "$_path" ]; then
+        echo "$(date -Iseconds) SKIP malformed line: $_line" >> "$LOG"
+        return 0
     fi
 
-    if [ ! -f "$path" ]; then
-        echo "$(date -Iseconds) SKIP missing source: $path" >> "$LOG"
-        continue
+    if [ ! -f "$_path" ]; then
+        echo "$(date -Iseconds) SKIP missing source: $_path" >> "$LOG"
+        return 0
     fi
 
-    if grep -qF "$path" "$DONE" 2>/dev/null; then
-        echo "$(date -Iseconds) SKIP already done: $path" >> "$LOG"
-        continue
+    if grep -qF "$_path" "$DONE" 2>/dev/null; then
+        echo "$(date -Iseconds) SKIP already done: $_path" >> "$LOG"
+        return 0
     fi
 
     # Channel skip — best-effort match by parent directory name.
-    skip_channel=0
+    _skip_channel=0
     if [ -f "$CHANNELS_FILE" ]; then
-        parent_dir=$(basename "$(dirname "$path")")
-        while IFS= read -r ch; do
-            [ -z "$ch" ] && continue
-            if [ "$ch" = "$parent_dir" ]; then
-                skip_channel=1
+        _parent_dir=$(basename "$(dirname "$_path")")
+        while IFS= read -r _ch; do
+            [ -z "$_ch" ] && continue
+            if [ "$_ch" = "$_parent_dir" ]; then
+                _skip_channel=1
                 break
             fi
         done < "$CHANNELS_FILE"
     fi
 
-    if [ "$skip_channel" = "1" ]; then
-        echo "$(date -Iseconds) SKIP commercial-free: $path" >> "$LOG"
-        printf '%s\n' "$path" >> "$DONE"
-        continue
+    if [ "$_skip_channel" = "1" ]; then
+        echo "$(date -Iseconds) SKIP commercial-free: $_path" >> "$LOG"
+        printf '%s\n' "$_path" >> "$DONE"
+        return 0
     fi
 
-    base="${path%.*}"
-    outdir="$(dirname "$path")"
-    echo "$(date -Iseconds) RUN comskip $path" >> "$LOG"
+    _base="${_path%.*}"
+    _outdir="$(dirname "$_path")"
+    echo "$(date -Iseconds) RUN comskip $_path" >> "$LOG"
     # BOTH stdout and stderr → progress_log (default /dev/null).
     # comskip writes most of its per-frame progress to stderr, not
     # stdout, so we cannot keep stderr in the main log without burying
@@ -126,14 +144,123 @@ tail -F -n 0 "$QUEUE" 2>/dev/null | while IFS= read -r line; do
     # EDL presence covers the success case.
     nice -n "$NICE_LEVEL" "$COMSKIP_BIN" \
         --ini="$COMSKIP_INI" \
-        --output="$outdir" \
-        "$path" >> "$PROGRESS_LOG" 2>&1 || true
+        --output="$_outdir" \
+        "$_path" >> "$PROGRESS_LOG" 2>&1 || true
 
     # Always mark as done (comskip rc=1 = no commercials found = OK).
-    printf '%s\n' "$path" >> "$DONE"
-    if [ -f "${base}.edl" ]; then
-        echo "$(date -Iseconds) EDL generated ${base}.edl" >> "$LOG"
+    printf '%s\n' "$_path" >> "$DONE"
+    if [ -f "${_base}.edl" ]; then
+        echo "$(date -Iseconds) EDL generated ${_base}.edl" >> "$LOG"
     else
-        echo "$(date -Iseconds) OK comskip (no commercials) $path" >> "$LOG"
+        echo "$(date -Iseconds) OK comskip (no commercials) $_path" >> "$LOG"
     fi
-done
+}
+
+# -------------------------------------------------------------------
+# watch — tail the queue forever, process each new line.
+# -------------------------------------------------------------------
+watch() {
+    exec 9>"$LOCK"
+    if ! flock -n 9; then
+        echo "$(date -Iseconds) comskip-pool already running, exiting" >> "$LOG"
+        return 0
+    fi
+
+    echo "$(date -Iseconds) comskip-pool started (watch)" >> "$LOG"
+
+    # tail -F -n 0 follows new lines as they are appended. We process
+    # each line inline (no subprocess function) so the script works in
+    # POSIX sh without `export -f`.
+    tail -F -n 0 "$QUEUE" 2>/dev/null | while IFS= read -r line; do
+        # NOTE: this runs in a subshell because of the pipe. process_line
+        # is defined in the parent, but POSIX sh copies function
+        # definitions into the subshell automatically — except with
+        # `set -e` and pipefail disabled the function body still runs.
+        process_line "$line"
+    done
+}
+
+# -------------------------------------------------------------------
+# drain — read the entire queue once, process every line, exit.
+# Used by entrypoint.sh on container start so that lines appended
+# while the container was down are not lost.
+# -------------------------------------------------------------------
+drain() {
+    exec 9>"$LOCK"
+    if ! flock -n 9; then
+        echo "$(date -Iseconds) comskip-pool drain: already running, exiting" >> "$LOG"
+        return 0
+    fi
+
+    _count=$(wc -l < "$QUEUE" 2>/dev/null | tr -d ' ')
+    _count=${_count:-0}
+    if [ "$_count" = "0" ]; then
+        echo "$(date -Iseconds) comskip-pool drain: queue empty" >> "$LOG"
+        return 0
+    fi
+
+    echo "$(date -Iseconds) comskip-pool drain: $_count queued line(s)" >> "$LOG"
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        process_line "$line"
+    done < "$QUEUE"
+
+    # Drain: empty the queue file. New lines appended after this point
+    # will be picked up by the watch loop (which entrypoint starts
+    # immediately after drain returns).
+    : > "$QUEUE"
+
+    echo "$(date -Iseconds) comskip-pool drain: complete" >> "$LOG"
+}
+
+# -------------------------------------------------------------------
+# prune-done — drop entries from done-list whose source no longer
+# exists. Run on container start so the done-list does not grow
+# unboundedly when recordings are deleted by the operator.
+#
+# Trade-off: pruning allows a later recording with the same path to
+# be re-processed. This is intentional — if the user deleted a
+# recording (presumably because it failed) and the same path is later
+# reused for a fresh recording, we want comskip to run on the new
+# file rather than silently skip it.
+# -------------------------------------------------------------------
+prune_done() {
+    exec 9>"$LOCK"
+    if ! flock -n 9; then
+        echo "$(date -Iseconds) comskip-pool prune-done: already running, exiting" >> "$LOG"
+        return 0
+    fi
+
+    if [ ! -s "$DONE" ]; then
+        echo "$(date -Iseconds) comskip-pool prune-done: done-list empty" >> "$LOG"
+        return 0
+    fi
+
+    _tmp="${DONE}.tmp.$$"
+    _kept=0
+    _dropped=0
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if [ -f "$path" ]; then
+            printf '%s\n' "$path" >> "$_tmp"
+            _kept=$((_kept + 1))
+        else
+            _dropped=$((_dropped + 1))
+        fi
+    done < "$DONE"
+
+    mv "$_tmp" "$DONE"
+    echo "$(date -Iseconds) comskip-pool prune-done: kept $_kept, dropped $_dropped (source missing)" >> "$LOG"
+}
+
+# Dispatch.
+case "$CMD" in
+    watch)      watch ;;
+    drain)      drain ;;
+    prune-done) prune_done ;;
+    *)
+        echo "$(date -Iseconds) comskip-pool: unknown subcommand '$CMD' (use watch|drain|prune-done)" >> "$LOG"
+        exit 2
+        ;;
+esac
