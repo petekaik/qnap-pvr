@@ -1,0 +1,41 @@
+# comskip container configuration.
+#
+# The comskip worker loop reads this file at startup. We use a small
+# shell-only YAML parser (no python3-yaml required) that supports the
+# subset of YAML used here: simple key: value pairs, dotted-path
+# nesting, and "- item" lists.
+#
+# Edit this file on the host at
+#   /share/Programs/pvr/comskip/etc/config.yaml
+# and restart the comskip container (`docker compose restart comskip`)
+# for changes to take effect.
+
+# Path to the comskip binary and detection config.
+comskip_binary: /usr/local/bin/comskip
+comskip_ini: /etc/comskip/comskip.ini
+
+# Nice level for the comskip process. 19 = lowest priority, yields
+# gracefully to interactive workloads on a Celeron J1900.
+nice_level: 19
+
+# Queue / log / done paths inside the container.
+log: /comskip/queue/comskip.log
+done: /comskip/queue/comskip-queue.done
+
+# Where comskip's own stdout (the per-frame progress spam — usually
+# one line per second per detection pass, hundreds of lines per
+# recording) goes. Set to /dev/null to discard, or to a file path to
+# keep for debugging. The structured pool log above is what you read
+# for normal operations; this is just for forensics.
+# Note: the path must be inside the container; the pool writes it
+# there. Defaults to /dev/null so the default behaviour is "quiet".
+progress_log: /dev/null
+
+# Channels that never carry commercials. Comskip is skipped for these
+# to save CPU. Match is by directory name (TVH uses channel name as
+# the parent directory under /recordings).
+commercial_free_channels:
+  - Yle TV1
+  - Yle TV2
+  - Yle Teema & Fem
+  - Yle Areena

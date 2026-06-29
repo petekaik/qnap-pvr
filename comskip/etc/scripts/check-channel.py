@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Check whether a recording should skip comskip based on its channel.
 
-Reads the TVHeadend DVR log files and returns 0 if the recording is on a
-commercial-free channel (e.g. YLE), otherwise 1.
+Reads the TVHeadend DVR log files and the commercial-free channel list
+(written by comskip-single.sh from config.yaml). Returns 0 if the
+recording is on a commercial-free channel (e.g. YLE), otherwise 1.
+
+Usage: check-channel.py <recording_path> [channels_file]
 """
 
 import json
@@ -11,14 +14,15 @@ import sys
 from pathlib import Path
 
 TVH_LOG_DIR = Path("/config/dvr/log")
-COMMERCIAL_FREE_CHANNELS = {
-    "Yle TV1",
-    "Yle TV2",
-    "Yle Teema & Fem",
-    "Yle TV1 HD",
-    "Yle TV2 HD",
-    "Yle Teema & Fem HD",
-}
+
+
+def load_channels(channels_file: str) -> set:
+    """Load the commercial-free channel list. One name per line, blank lines ignored."""
+    try:
+        with open(channels_file, "r", encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip()}
+    except OSError:
+        return set()
 
 
 def find_channel_name(recording_path: str) -> str:
@@ -43,7 +47,7 @@ def find_channel_name(recording_path: str) -> str:
                 channelname = data.get("channelname", "")
                 if channelname:
                     return channelname
-        # Also consider entries with no files but matching parent (fallback)
+        # Fallback: parent-only match.
         for f in data.get("files", []):
             fpath = Path(f.get("filename", ""))
             if str(fpath.parent) == target_parent:
@@ -55,11 +59,25 @@ def find_channel_name(recording_path: str) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: check-channel.py <recording_path>", file=sys.stderr)
+    if len(sys.argv) not in (2, 3):
+        print("Usage: check-channel.py <recording_path> [channels_file]", file=sys.stderr)
         sys.exit(2)
-    channel = find_channel_name(sys.argv[1])
+    recording_path = sys.argv[1]
+    channels_file = sys.argv[2] if len(sys.argv) == 3 else "/etc/comskip/config.yaml"
+    # Fall back to config.yaml parsing if channels_file doesn't exist.
+    if not os.path.isfile(channels_file):
+        try:
+            import yaml
+            with open("/etc/comskip/config.yaml") as f:
+                data = yaml.safe_load(f) or {}
+            channels = set(data.get("commercial_free_channels", []))
+        except (ImportError, OSError):
+            channels = set()
+    else:
+        channels = load_channels(channels_file)
+
+    channel = find_channel_name(recording_path)
     print(channel)
-    if channel in COMMERCIAL_FREE_CHANNELS:
+    if channel in channels:
         sys.exit(0)
     sys.exit(1)

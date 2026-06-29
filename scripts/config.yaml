@@ -1,0 +1,34 @@
+# TVH post-recording configuration.
+#
+# Loaded by /pvr/scripts/post-recording.sh inside the tvheadend
+# container. Controls WHICH post-processing steps run and WHERE the
+# queue files live.
+#
+# Parsed by the shell-only YAML loader at
+# /usr/local/bin/config-loader.sh. No python or yaml libraries needed
+# in the TVH container.
+#
+# Edit on the host at
+#   /share/Programs/pvr/scripts/config.yaml
+# and restart tvheadend for changes to take effect.
+
+# Path mapping. host_prefix is the isäntä mount point for recordings,
+# container_prefix is the in-container path TVH passes to the hook.
+paths:
+  host_prefix: "/recordings"
+  container_prefix: "/recordings"
+
+# Logging. Must point to a writable path inside the TVH container.
+# /config/dvr/log is the TVH DVR log directory and is always rw.
+log:
+  path: "/config/dvr/log/post-recording.log"
+
+# Post-processing pipeline.
+steps:
+  comskip:
+    enable: true
+    queue: "/comskip/queue/comskip-queue.jsonl"
+
+  transcode:
+    enable: true
+    queue: "/transcoder/queue/transcode-queue.jsonl"

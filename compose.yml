@@ -22,15 +22,47 @@ services:
       - PUID=0
       - PGID=0
       - TZ=${TZ}
+      # Post-processing path mapping (overridable via .env).
+      - PVR_HOST_PREFIX=${PVR_HOST_PREFIX}
+      - PVR_LOG_PATH=${PVR_LOG_PATH}
     privileged: true
     volumes:
       - ${DATA}/tvheadend/config:/config
       - ${DATA}/tvheadend/epg:/epg
       - ${DATA}/media/recordings:/recordings
-      - ${DATA}/transcoder/scripts:/transcoder/scripts:ro
+      # TVH post-recording hook + shared config. Mounted read-only so
+      # TVH cannot mutate the scripts, but edits on the host take effect
+      # on next container restart (no rebuild needed).
+      - ${DATA}/scripts:/pvr/scripts:ro
+      # Shell-only YAML parser used by post-recording.sh. Mounted into
+      # /usr/local/bin so the script can . it directly.
+      - ${DATA}/scripts/config-loader.sh:/usr/local/bin/config-loader.sh:ro
+      # Readiness probe — checks that /dev/dvb is populated. Mounted
+      # read-only so the container cannot mutate the host copy. The
+      # probe does NOT restart the container on failure (a fresh
+      # container would re-bind /dev/dvb from the same empty state);
+      # the host-side dvb-watchdog handles actual recovery.
+      - ${DATA}/scripts/tvh-healthcheck.sh:/usr/local/bin/tvh-healthcheck.sh:ro
+      # Queue directories shared with the comskip/transcode containers.
+      # post-recording.sh appends one JSONL line per recording into
+      # both queues; the worker containers read and remove them.
+      # These MUST be writable from the tvheadend container.
+      - ${DATA}/comskip/queue:/comskip/queue
       - ${DATA}/transcoder/queue:/transcoder/queue
+      # Shared scratch directory for transient files (locks, FFmpeg
+      # logs, channel-name list). Host-side path lives on the big
+      # volume so the 64MB /tmp ramdisk never fills up. The path
+      # inside the container is /pvr/tmp — see comskip-pool.sh,
+      # transcode-pool.sh, and post-recording.sh.
+      - ${DATA}/tmp:/pvr/tmp
     devices:
       - /dev/dvb:/dev/dvb
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tvh-healthcheck.sh"]
+      interval: 30s
+      timeout: 35s
+      retries: 5
+      start_period: 60s
     networks:
       eth1:
         ipv4_address: ${LOCAL_IPV4_1}
@@ -68,10 +100,11 @@ services:
         ipv4_address: ${LOCAL_IPV4_2}
 
   comskip:
-    image: pvr-transcoder:latest
+    image: pvr-comskip:latest
     pull_policy: build
     build:
-      context: ./transcoder
+      context: ./comskip
+      dockerfile: Dockerfile
     container_name: comskip
     hostname: comskip
     restart: unless-stopped
@@ -84,28 +117,30 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: 512M
+          memory: 1G
         reservations:
           cpus: '0.1'
           memory: 64M
     environment:
       - TZ=${TZ}
-      - TRANSCODE_CRON=${TRANSCODE_CRON}
-      - COMSKIP_WORKERS=${COMSKIP_WORKERS}
-      - CONTAINER_ROLE=comskip
     volumes:
       - ${DATA}/media/recordings:/recordings
-      - ${DATA}/transcoder/scripts:/etc/transcoder:ro
-      - ${DATA}/transcoder/queue:/transcoder/queue
       - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
+      # Comskip config and runtime scripts live under comskip/etc on
+      # the host. The entrypoint and pool script are image-baked; this
+      # mount overrides the host copy of config.yaml and comskip.ini.
+      - ${DATA}/comskip/etc:/etc/comskip:ro
+      - ${DATA}/comskip/queue:/comskip/queue
+      - ${DATA}/tmp:/pvr/tmp
     networks:
       - pvr_internal
 
   transcode:
-    image: pvr-transcoder:latest
+    image: pvr-transcode:latest
     pull_policy: build
     build:
       context: ./transcoder
+      dockerfile: Dockerfile
     container_name: transcode
     hostname: transcode
     restart: unless-stopped
@@ -118,21 +153,21 @@ services:
       resources:
         limits:
           cpus: '3.0'
-          memory: 1G
+          memory: 2G
         reservations:
           cpus: '0.1'
           memory: 64M
     environment:
       - TZ=${TZ}
       - TRANSCODE_CRON=${TRANSCODE_CRON}
-      - TRANSCODE_WORKERS=${TRANSCODE_WORKERS}
-      - CONTAINER_ROLE=transcode
     volumes:
       - ${DATA}/media/recordings:/recordings
       - ${DATA}/media/transcoded:/media/transcoded
+      - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
       - ${DATA}/transcoder/scripts:/etc/transcoder:ro
       - ${DATA}/transcoder/queue:/transcoder/queue
-      - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
+      - ${DATA}/media/transcoded:/media/transcoded
+      - ${DATA}/tmp:/pvr/tmp
     networks:
       - pvr_internal
 

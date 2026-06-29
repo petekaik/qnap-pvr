@@ -1,0 +1,217 @@
+# transcode container configuration.
+#
+# The transcode worker loop reads this file at startup. Parsed by the
+# shell-only YAML loader at /usr/local/bin/pvr-config-loader.sh — no
+# python or yaml libraries needed at runtime.
+#
+# Edit on the host at
+#   /share/Programs/pvr/transcoder/scripts/config.yaml
+# and restart the transcode container for changes to take effect.
+
+# Cron expression. Default: every hour. Override with TRANSCODE_CRON
+# env var in .env / compose.
+cron: "0 * * * *"
+
+# Global settings (apply regardless of profile).
+global:
+  # Process priority. Higher = nicer to other workloads.
+  # 19 = lowest priority on Linux.
+  nice_level: 19
+
+  # Threads. 0 = use all available cores.
+  # Three separate knobs so each subsystem can be tuned:
+  #   - threads: ffmpeg's decoder/demuxer/muxer pool
+  #   - filter_threads: filter graph pool (scale, etc.)
+  #   - libx264_threads: x264 frame-level parallelism
+  threads: 0
+  filter_threads: 0
+  libx264_threads: 0
+
+# Profiles. Each profile is a complete FFmpeg invocation plan.
+# The transcode worker picks `default_profile` unless the queue line
+# contains an explicit "profile": "<name>" field.
+#
+# Common fields per profile:
+#   video.codec       libx264 / libx265 / h264_qsv / copy
+#                     "copy" means stream-copy the source video bit-for-bit
+#   video.preset      libx264 preset (ultrafast, veryfast, fast, medium, slow)
+#   video.tune        libx264 tune (film, animation, fastdecode, zerolatency)
+#   video.crf         libx264 quality (0-51, lower = better; 15 ≈ visually
+#                     lossless for 1080p broadcast, 18 ≈ visually lossless, 23
+#                     ≈ default, 28 ≈ web)
+#   video.pix_fmt     yuv420p / yuv420p10le / yuv422p / ...
+#   video.scale       null = no scaling, or FFmpeg scale filter expression
+#                     e.g. "scale=w=1280:h=720:force_original_aspect_ratio=decrease"
+#   video.extra       extra ffmpeg flags as a string, optional
+#   audio.codec       aac / libmp3lame / ac3 / copy / null
+#                     "copy" = stream-copy every input audio stream
+#                              bit-for-bit (preserves original codec, channel
+#                              layout, and bitrate — DD 5.1 stays DD 5.1)
+#                     "null" = drop audio
+#   audio.bitrate     e.g. "192k", "320k" — ignored if codec is copy
+#   audio.channels    0 = preserve source, 2 = stereo, 1 = mono (only
+#                     matters if codec is not copy)
+#   subtitle.codec    copy / mov_text / null / null
+#                     "copy" = stream-copy every subtitle stream
+#                              (dvb_subtitle goes through as-is in the
+#                              MP4 container — VLC plays them, Jellyfin
+#                              ignores them, that's just the DVB reality)
+#                     "mov_text" = transcode bitmap subtitles (dvb_subtitle)
+#                              into soft text tracks (only if the input
+#                              already carries a text-format stream).
+#                              Note: bitmap-to-text conversion needs
+#                              ccextractor — see "subtitle_strategy" below.
+#                     "null"  = drop subtitles
+#   subtitle_strategy dvb_to_srt / inline / drop
+#                     "dvb_to_srt" = run ccextractor on the source .ts to
+#                              produce .srt files alongside the recording,
+#                              then copy those .srt files into the
+#                              transcoded/ directory after remux. Requires
+#                              `ccextractor` installed in the container.
+#                     "inline"  = stream-copy subtitles into the MP4 (same
+#                              as subtitle.codec=copy).
+#                     "drop"   = skip subtitles entirely (recommended if
+#                              you only need audio-video fidelity).
+#   output_subdir     subdirectory under /media/transcoded/ for outputs
+#                     e.g. "" -> /media/transcoded/<...>
+#                          "_720p" -> /media/transcoded_720p/<...>
+#   movflags          mp4 faststart flag string, default "+faststart"
+#
+# Jellyfin integration: Jellyfin will pick whatever profile you encode
+# to. To switch between profiles automatically, Jellyfin would need to
+# know which file to play — typically the directory layout differs.
+# Convention used here:
+#   preservation files live in /media/transcoded/...
+#   web_720p       files live in /media/transcoded_720p/...
+# Map both paths as Jellyfin libraries if you keep both profiles enabled.
+# Or encode only `preservation` (the default) and let Jellyfin
+# transcode-on-the-fly for clients that need a smaller stream.
+profiles:
+
+  # ===================================================================
+  # DEFAULT PROFILE — preservation. Closest to source broadcast.
+  #   - video: visually lossless libx264 (CRF 15 ≈ broadcast-grade,
+  #            below the visibility threshold for DVB 1080i/p H.264)
+  #   - audio: copy — every AC3/EAC3/AAC track is preserved with its
+  #            original channel count (5.1 stays 5.1)
+  #   - subtitle: copy DVB streams into the MP4. For clients (VLC)
+  #            that can render them, fine. For clients that can't
+  #            (Jellyfin, most browsers), use the `dvb_to_srt` strategy
+  #            once ccextractor is available — see subtitle_strategy.
+  # ===================================================================
+  preservation:
+    video:
+      codec: libx264
+      preset: slow
+      tune: film
+      crf: 15
+      pix_fmt: yuv420p
+      scale: null
+      extra: ""
+    audio:
+      codec: copy
+      bitrate: ""
+      channels: 0
+    subtitle:
+      codec: copy
+      strategy: inline
+    output_subdir: ""   # /media/transcoded/<...>
+    movflags: "+faststart"
+
+  # ===================================================================
+  # PASSTHROUGH — zero re-encode. Fast, identical video/audio quality.
+  #   Useful for "I just want it in MP4" cases (some players prefer
+  #   MP4 over TS even when the codecs are identical). All streams
+  #   including subtitles are copied.
+  #   NOTE: TS→MP4 stream-copy is not a guaranteed lossless operation
+  #   — ffmpeg remuxes through its mov muxer, which can tweak codec
+  #   private data (e.g. H.264 SPS/PPS rewriting). The decoded output
+  #   is identical, but frame-level checksum comparison may differ.
+  # ===================================================================
+  passthrough:
+    video:
+      codec: copy
+      scale: null
+      extra: ""
+    audio:
+      codec: copy
+      bitrate: ""
+      channels: 0
+    subtitle:
+      codec: copy
+      strategy: inline
+    output_subdir: "_passthrough"
+    movflags: "+faststart"
+
+  # ===================================================================
+  # high_quality — kept for backwards compatibility. Equivalent to
+  # preservation but with audio re-encoded to AAC stereo (loses
+  # multichannel and the original audio quality is reduced from
+  # broadcast AC3 ~448kbps to AAC 192kbps stereo).
+  # ===================================================================
+  high_quality:
+    video:
+      codec: libx264
+      preset: medium
+      tune: film
+      crf: 18
+      pix_fmt: yuv420p
+      scale: null
+      extra: ""
+    audio:
+      codec: aac
+      bitrate: "192k"
+      channels: 2
+    subtitle:
+      codec: null
+      strategy: drop
+    output_subdir: ""
+    movflags: "+faststart"
+
+  # ===================================================================
+  # web_720p — 720p, tighter bitrate. Suitable for tablets and
+  # phones on slow networks. Smaller files, lower quality. Audio is
+  # still copied (the bandwidth savings would be tiny and we'd lose
+  # the original surround mix if the source carried one).
+  # ===================================================================
+  web_720p:
+    video:
+      codec: libx264
+      preset: veryfast
+      tune: fastdecode
+      crf: 28
+      pix_fmt: yuv420p
+      scale: "scale=w=1280:h=720:force_original_aspect_ratio=decrease"
+      extra: ""
+    audio:
+      codec: copy
+      bitrate: ""
+      channels: 0
+    subtitle:
+      codec: copy
+      strategy: inline
+    output_subdir: "_720p"
+    movflags: "+faststart"
+
+# Which profile to use when the queue line doesn't specify one.
+default_profile: preservation
+
+# =====================================================================
+# Jellyfin NFO + sidecar handling.
+# =====================================================================
+nfo_generator: /etc/transcoder/generate-nfo.py
+copy_edl: true
+copy_txt: true
+copy_log: false
+
+# =====================================================================
+# Logs.
+# log:         main log file path
+# log_max_kb:  rotate when log exceeds this size in KB
+# log_keep:    keep this many rotated log files (e.g. .1, .2, ...)
+# =====================================================================
+log: /var/log/transcode-nightly.log
+log_max_kb: 1024
+log_keep: 5
+
+done: /transcoder/queue/transcode-queue.done

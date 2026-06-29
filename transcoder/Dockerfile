@@ -1,52 +1,33 @@
-FROM debian:bullseye-slim
+FROM pvr-base:latest
 
-# Install ffmpeg for transcoding (Debian bullseye ships ffmpeg 4.3.x which
-# is compatible with comskip), cron, and python3 for JSONL parsing.
-# Coreutils provides flock.
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ffmpeg \
-        cron \
-        coreutils \
-        bash \
-        python3 \
-        ca-certificates \
-        libargtable2-0 \
-        libsdl1.2debian \
-        procps && \
-    rm -rf /var/lib/apt/lists/*
+# Transcode container image. Inherits ffmpeg, python3 (for
+# generate-nfo.py), cron, etc. from pvr-base. We bake only the shell-
+# only YAML parser, the worker pool script, the NFO generator, and a
+# small entrypoint that runs the pool once on container start and
+# then again on TRANSCODE_CRON schedule via crond.
+#
+# Container-internal layout:
+#   /usr/local/bin/entrypoint.sh
+#   /usr/local/bin/pvr-config-loader.sh
+#   /etc/transcoder/transcode-pool.sh
+#   /etc/transcoder/generate-nfo.py
+#
+# Runtime config and queue files come from the host via compose:
+#   transcoder/scripts -> /etc/transcoder
+#   transcoder/queue   -> /transcoder/queue
 
-# comskip binary is built separately and copied from the host build directory
-# at image build time. The .so dependencies above must match the build image.
-COPY build/comskip /usr/local/bin/comskip
-
-COPY scripts/post-recording.sh         /usr/local/bin/post-recording.sh
-COPY scripts/nightly-transcode.sh      /etc/transcoder/nightly-transcode.sh
 COPY scripts/entrypoint.sh             /usr/local/bin/entrypoint.sh
-COPY scripts/generate-nfo.py           /etc/transcoder/generate-nfo.py
-COPY scripts/check-channel.py          /etc/transcoder/check-channel.py
-COPY scripts/comskip-worker.sh         /etc/transcoder/comskip-worker.sh
-COPY scripts/comskip-pool.sh           /etc/transcoder/comskip-pool.sh
-COPY scripts/comskip-single.sh         /etc/transcoder/comskip-single.sh
+COPY scripts/pvr-config-loader.sh      /usr/local/bin/pvr-config-loader.sh
 COPY scripts/transcode-pool.sh         /etc/transcoder/transcode-pool.sh
-COPY scripts/transcode-single.sh       /etc/transcoder/transcode-single.sh
-COPY comskip/comskip.ini               /etc/transcoder/comskip.ini
+COPY scripts/generate-nfo.py           /etc/transcoder/generate-nfo.py
 
-RUN chmod +x /usr/local/bin/comskip \
-             /usr/local/bin/post-recording.sh \
-             /etc/transcoder/nightly-transcode.sh \
-             /usr/local/bin/entrypoint.sh \
-             /etc/transcoder/generate-nfo.py \
-             /etc/transcoder/check-channel.py \
-             /etc/transcoder/comskip-worker.sh \
-             /etc/transcoder/comskip-pool.sh \
-             /etc/transcoder/comskip-single.sh \
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+             /usr/local/bin/pvr-config-loader.sh \
              /etc/transcoder/transcode-pool.sh \
-             /etc/transcoder/transcode-single.sh
+             /etc/transcoder/generate-nfo.py
 
 VOLUME ["/recordings", "/media/transcoded", "/transcoder/queue", "/config/dvr/log"]
 
-# Default role; overridden by COMPOSE via environment variable CONTAINER_ROLE.
 ENV CONTAINER_ROLE=transcode
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

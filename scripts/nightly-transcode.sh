@@ -7,7 +7,7 @@
 QUEUE="/transcoder/queue/transcode-queue.jsonl"
 DONE="/transcoder/queue/transcode-queue.done"
 LOG="/var/log/transcode-nightly.log"
-LOCK="/tmp/transcode-nightly.lock"
+LOCK="/pvr/tmp/transcode-nightly.lock"
 
 # TVH writes the recording path as seen inside its own container. If TVH runs
 # on the host instead, change HOST_PREFIX to match the host mount point.
@@ -73,7 +73,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 
     echo "$(date -Iseconds) Transcoding $cont_src -> $mp4" >> "$LOG"
 
-    ffmpeg_log="/tmp/ffmpeg-$$.log"
+    ffmpeg_log="/pvr/tmp/ffmpeg-$$.log"
     nice -n 19 ffmpeg -y -hide_banner -loglevel error -threads 2 -i "$cont_src" \
         -vf 'scale=w=1280:h=720:force_original_aspect_ratio=decrease' \
         -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p \
