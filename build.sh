@@ -56,6 +56,15 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-tvheadend"
 # gitignored and is the working tree where the qnap-pvr
 # fork patches live (pvr_queue.c, webui.c, Makefile).
 # We rsync it in here so the build is self-contained.
+# postproc.js lives in pvr-tvhd/rootfs/ as the canonical
+# copy (so changes to it can be committed normally); we
+# copy it into tvh-src/ before rsync so the upstream
+# build's MKBUNDLE step picks it up.
+if [ -f "$PROJECT_DIR/pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js" ]; then
+    mkdir -p "$PROJECT_DIR/tvh-src/src/webui/static/app"
+    cp "$PROJECT_DIR/pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js" \
+       "$PROJECT_DIR/tvh-src/src/webui/static/app/postproc.js"
+fi
 if [ -d "$PROJECT_DIR/tvh-src" ]; then
     rsync -a --delete \
         --exclude='.git' \
@@ -74,7 +83,9 @@ docker build $CACHE_FLAG \
     -t pvr-tvheadend:latest \
     "$PROJECT_DIR/pvr-tvhd"
 # Clean up the rsynced source tree so it doesn't pollute
-# the next pvr-tvhd edit / commit.
+# the next pvr-tvhd edit / commit. postproc.js in
+# tvh-src/ is gitignored (it lives canonically in
+# pvr-tvhd/rootfs/) so the next run recreates it.
 rm -rf "$PROJECT_DIR/pvr-tvhd/tvh-src"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] done"

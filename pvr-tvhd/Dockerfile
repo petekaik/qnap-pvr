@@ -118,6 +118,14 @@ RUN apk add --no-cache \
 COPY --from=builder "/tvheadend" "/"
 COPY rootfs/init.d/container-entrypoint.sh /init
 
+# The webui bundle (tvh.js.gz) is built by the upstream
+# build process when it walks src/webui/static/app/*.js.
+# Our postproc.js is added to that list via Makefile.webui
+# in tvh-src/, so the bundle step already includes it
+# when the builder stage runs. We don't COPY postproc.js
+# separately — the bundle ships inside `/tvheadend` and
+# is what the web server actually serves.
+
 # Note: NO VOLUME directive here. docker compose binds
 # /config and /recordings explicitly. The upstream
 # `VOLUME /var/lib/tvheadend` is exactly what breaks the
