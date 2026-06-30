@@ -3,9 +3,7 @@
 qnap-pvr fork of Tvheadend with the Post-Processing webui
 tab (FP-1 of BACKLOG.md).
 
-## Status (2026-06-30) — LIVE
-
-The fork is now in production use on QNAP.
+## Status (2026-06-30) — Partially live
 
 * compose.yml points at `pvr-tvheadend:latest`
 * The container uses `command: ["-c", "/var/tvheadend"]`
@@ -14,14 +12,18 @@ The fork is now in production use on QNAP.
   TVH reads it via `/var/tvheadend` because the
   `realpath("/config")` call inside `config_boot` exits
   78 under this Alpine 3.20 + QNAP kernel combination.
-  See `~/.hermes/plans/postproc-webui.md` for the
-  investigation.
 * Healthcheck passes (`/dev/dvb/adapter*` present)
 * HTTP/HTSP servers on 9981/9982
 * EPG, DVB adapters, recordings all functional
-* `/pvr/api/queue/<kind>` and `/pvr/api/log/<kind>`
+* /pvr/api/queue/<kind> and /pvr/api/log/<kind>
   respond (HTTP 401, same as the rest of the TVH API
   without auth)
+* `postproc.js` is included in the bundle (3 hits)
+* dvr.js / status.js patches for tab registration are
+  applied locally and on the QNAP build context, but
+  MKBUNDLE is not picking them up — the menu items
+  therefore don't appear in the DVR and Status tabs.
+  This is a known issue being investigated.
 
 ## Files
 
