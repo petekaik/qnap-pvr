@@ -74,9 +74,17 @@ services:
     devices:
       - /dev/dvb:/dev/dvb
     healthcheck:
-      test: ["CMD", "/usr/local/bin/tvh-healthcheck.sh"]
+      # Process-level healthcheck. The qnap-pvr fork's runner
+      # image does NOT ship /usr/local/bin/tvh-healthcheck.sh
+      # (that was a linuxserver-only helper), and TVH's HTTP
+      # server requires auth on every endpoint, so there is no
+      # way to probe the service anonymously without modifying
+      # TVH itself. We fall back to a process check: tvheadend
+      # is alive when at least one process named 'tvheadend'
+      # is running. Alpine ships pgrep out of the box.
+      test: ["CMD", "pgrep", "-x", "tvheadend"]
       interval: 30s
-      timeout: 35s
+      timeout: 10s
       retries: 5
       start_period: 60s
     networks:

@@ -137,9 +137,55 @@ the section for whatever service they are debugging.
   suffix does not match the current pool's $$. Called
   from `entrypoint.sh` between `recover-orphaned-tmp` and
   `prune-done`. Verified on QNAP: cleared 5 stale logs,
-  freed ~7 MB. The cleanup is logged with the count and
-  the bytes reclaimed so the operator can see at a glance
-  how much was recovered.
+  freed ~7 MB. The cleanup is logged with the count and the
+  bytes reclaimed so the operator can see at a glance how much
+  was recovered.
+
+## [Unreleased] — Post-Processing tab in TVH webui
+
+### Added
+
+- **Post-Processing tab in TVH webui.** The MVP for the
+  queue dashboard lives in two new pieces plus the small
+  patches needed to integrate them with TVH's webui:
+  - `pvr-queue-exposer/` — Alpine + Python 3.12 HTTP bridge
+    (50 MB image, port 8765). Reads queue JSONL files, done
+    lists and log tails from the comskip and transcode queues
+    and exposes them as JSON. Endpoints: `/api/status`,
+    `/api/queue/<kind>`, `/api/queue/<kind>/done`,
+    `/api/log/<kind>?lines=N`, `/api/healthz`. Lives on
+    `pvr_internal`, so it sees the queue volumes without
+    exposing queue paths to the LAN.
+  - `pvr-tvhd/` — TVH fork that bundles a new `postproc.js`
+    module into `tvh.js.gz` (TVH's webui is a precompiled
+    gzipped bundle — runtime patching is not possible). The
+    fork adds a "Post-Processing" tab to the DVR view
+    (queue + done lists for comskip and transcode, polled
+    every 10 s) and a KPI summary panel to the Status view
+    (queue counts, done counts, 24 h failure counts).
+  - `compose.yml` updated so `tvheadend` uses the locally
+    built `pvr-tvheadend:built` image (`pull_policy: never`)
+    and attaches to both `eth1` and `pvr_internal`. New
+    `pvr-queue-exposer` service mounts the queue and log
+    directories read-only.
+  - `tvh-src/` is gitignored — it is a build dependency,
+    not a project source.
+
+  Build takes ~12 min on a low-power x86_64 host; see
+  `pvr-tvhd/README.md` for the rebuild procedure and the
+  four-file patch surface (the new module, two `if-block`
+  additions to existing modules, and one `JAVASCRIPT +=`
+  line in `Makefile.webui`).
+
+  MVP scope is **read-only dashboard**. Deferred to later
+  feature packs: log tail viewer, skip-queue POST endpoint,
+  trigger-pool POST endpoint, log download.
+
+  Verified on QNAP: `postproc` appears 3 times in `tvh.js.gz`
+  (module definition + dvr call + status call),
+  `pvr-queue-exposer` is reachable from TVH (HTTP 200 on
+  `/api/healthz`), and the bundle is loaded by the browser
+  unmodified (no proxy, no runtime patching).
 
 ### Security
 

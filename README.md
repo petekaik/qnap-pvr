@@ -24,7 +24,9 @@ recordings.
 | `jellyfin`    | `jellyfin/jellyfin:latest`                     | Media server for live TV and recordings                     |
 | `comskip`     | built from `comskip/` → `pvr-comskip:latest`   | Real-time commercial detection, writes `.edl` next to `.ts` |
 | `transcode`   | built from `transcoder/` → `pvr-transcode:latest` | Drains the queue, transcodes to MP4, emits NFO/sidecars  |
-| shared base   | built from `pvr-base/` → `pvr-base:latest`     | Debian + ffmpeg + python3 + cron (FROM pvr-base)            |
+| `pvr-base`     | built from `pvr-base/` → `pvr-base:latest`     | Debian + ffmpeg + python3 + cron (FROM pvr-base)            |
+| `pvr-queue-exposer` | built from `pvr-queue-exposer/` → `pvr-queue-exposer:latest` | Read-only HTTP bridge that exposes queue state as JSON to the webui |
+| TVH fork       | built from `tvh-src/` → `pvr-tvheadend:built`   | Local TVH fork with `postproc.js` (Post-Processing tab) baked into the webui bundle |
 
 The `pvr-base` image is not a running service. It exists only as the
 shared build cache layer so the two specialised images (comskip / transcode)
@@ -36,6 +38,21 @@ Comskip and transcode communicate with TVHeadend via JSONL files in
 into the TVH container. The two worker containers run with
 `network_mode: none` — no network interface at all — so the queues
 are the only communication channel between them.
+
+## Dashboard (read-only)
+
+TVHeadend's webui has a **Post-Processing** tab in the Digital Video
+Recorder view, and a matching **Post-Processing** panel in the
+Status view. It shows:
+
+  - the live comskip and transcode queues (recordings waiting to be
+    processed), with size and last-activity timestamps
+  - the corresponding done lists (recently finished recordings)
+  - 24 h failure counts for both queues
+  - a 10 s auto-refresh
+
+This requires the local TVH fork (image `pvr-tvheadend:built`).
+Reasoning and rebuild steps are in `pvr-tvhd/README.md`.
 
 ## Quick start
 
@@ -217,7 +234,7 @@ runs on the same `.ts` only thrash disk I/O.
 ## Why a separate transcode container?
 
 Same reasoning: transcode is decoupled from recording. Even when running
-in real time, a Celeron-class host struggles if FFmpeg and TVH's DVB
+in real time, a low-power host struggles if FFmpeg and TVH's DVB
 demuxer compete for the same disk. Running transcode in a sidecar
 container allows the host scheduler (`TRANSCODE_CRON`) to schedule
 encoding for off-peak hours, and lets us cap the encoding resource

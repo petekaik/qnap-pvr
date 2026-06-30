@@ -82,8 +82,9 @@ docker compose up -d tvheadend
 `<DATA>` is the directory where the project is checked out on the
 host (see `.env.example`).
 
-A full build takes ~12 minutes on the QNAP Celeron (down from ~30
-minutes on first build because Docker caches the builder stage).
+A full build takes ~12 minutes on a low-power x86_64 host (down
+from ~30 minutes on the first build because Docker caches the
+builder stage).
 
 ## Why a full source build?
 

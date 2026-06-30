@@ -358,7 +358,7 @@ concurrent runs on the same `.ts` only thrash disk I/O.
 ## Why a separate transcode container?
 
 Transcode is decoupled from recording. Even when running in real time
-on a more powerful host, a Celeron-class CPU struggles when FFmpeg
+on a more powerful host, a low-power x86_64 CPU struggles when FFmpeg
 and TVH's DVB demuxer compete for the same disk. Running transcode in
 a sidecar container lets the host scheduler (`TRANSCODE_CRON`)
 defer encoding to off-peak hours, and lets the resource limit cap
