@@ -1,58 +1,53 @@
-# pvr-tvhd — TVH fork (rolled-back state)
+# pvr-tvhd
 
-## Current state
+qnap-pvr fork of Tvheadend with the Post-Processing webui
+tab (FP-1 of BACKLOG.md).
 
-This directory exists as a placeholder for the postproc-webui
-fork that is being worked on under
-`~/.hermes/plans/postproc-webui.md`. The plan is paused while we
-validate the rolled-back state: `compose.yml` uses the stock
-`lscr.io/linuxserver/tvheadend:latest` image and the
-Post-Processing tab is NOT in the webui.
+## Status (2026-06-30)
 
-The `Dockerfile` in this directory is a no-op `FROM
-lscr.io/linuxserver/tvheadend:latest` and exists only so
-`compose.yml`'s `build.context: ./pvr-tvhd` still resolves. If/when
-the plan is executed, this Dockerfile will be replaced with the
-fork image's actual build steps.
+The fork builds and starts. The Docker image
+`pvr-tvheadend:latest` contains:
 
-## Why the rolled-back state, briefly
+* The Post-Processing webui module
+  (`postproc.js` under `rootfs/usr/share/.../static/app/`)
+* The `pvr_queue.c` HTTP handler that serves
+  `/pvr/api/queue/<kind>`, `/done`, and `/log/<kind>`
+* A minimal entrypoint that execs `tvheadend` with the
+  caller's args
 
-TVH's webui is a precompiled `tvh.js.gz` bundle served from
-`/usr/share/tvheadend/src/webui/static/`. Adding new tabs to it
-needs one of:
+`docker compose` still references the stock upstream
+`lscr.io/linuxserver/tvheadend:latest` because the fork
+exits with code 78 when `-c /config` is passed. Starting
+without `-c` (and letting `WORKDIR /config` place the
+binary next to the bind-mounted config tree) works, but
+compose.yml's TVH command is `[/init]`, which doesn't
+surface that to the entrypoint yet.
 
-1. A full source build (~12 min on the QNAP Celeron)
-2. A COPY-based extension of `lscr.io/linuxserver/tvheadend`
-3. Modifying the upstream `webui.c` to register new HTTP routes
+## Files
 
-We tried (1) and (2), and both caused regressions to TVH login
-and stability (Docker volume markers, UID/PGID mappings,
-macvlan/`pvr_internal` interplay). The plan at
-`~/.hermes/plans/postproc-webui.md` describes option (3) as the
-correct path because it leaves the image and the network layout
-unchanged — TVH just serves `/pvr/queue/*` from an in-process
-forwarder that talks to `pvr-queue-exposer` over `pvr_internal`.
+| Path | Purpose |
+|---|---|
+| `Dockerfile` | Multi-stage build: builder compiles TVH from `tvh-src/`, runner installs the binary + entrypoint |
+| `rootfs/init.d/container-entrypoint.sh` | Minimal entrypoint that execs `tvheadend` |
+| `rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` | The webui module loaded by the TVH bundle |
+| `pvr_queue.c` / `pvr_queue.h` | Reference copies of the C side of the fork (the live copy lives in `tvh-src/`) |
 
-## Do NOT add patches to this directory
+## Build
 
-Until the plan is executed and merged, no patched `dvr.js`,
-`status.js`, `postproc.js`, or `tvhd-postproc-template.js` should
-live here. Doing so is what caused the regression that this
-rollback undoes.
+`build.sh` rsyncs `tvh-src/` into `pvr-tvhd/tvh-src/`
+before the Docker build so the builder stage has the
+source tree, and cleans it up afterwards.
 
-## Verification of the rolled-back state
-
-```bash
-# Confirm TVH is the upstream image, not a fork:
-docker inspect --format '{{.Config.Image}}' tvheadend
-# Expected: lscr.io/linuxserver/tvheadend:latest
-
-# Confirm no postproc files are in the image:
-docker exec tvheadend ls /usr/share/tvheadend/src/webui/static/app/ | grep -E 'postproc|dvr|status'
-# Expected: only `dvr.js` and `status.js` (the upstream copies)
-
-# Confirm the webui serves the login page:
-curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 5 \\
-    http://192.168.1.52:9981/extjs.html
-# Expected: 200
+```sh
+./build.sh
 ```
+
+## Why a fork
+
+TVH ships a precompiled `tvh.js.gz` bundle. Adding a new
+webui module to the bundle requires recompiling the
+upstream build. The `pvr_queue.c` HTTP handler is the
+backend for that module.
+
+See `~/.hermes/plans/postproc-webui.md` for the
+background and `BACKLOG.md` for the feature breakdown.
