@@ -163,6 +163,13 @@ the section for whatever service they are debugging.
     (queue + done lists for comskip and transcode, polled
     every 10 s) and a KPI summary panel to the Status view
     (queue counts, done counts, 24 h failure counts).
+    The fork also replaces `support/container-entrypoint.sh`
+    in the runner stage so TVH uses `--config /config` and
+    sees the persistent config tree that `compose.yml`
+    bind-mounts there. Without this wrapper the webui
+    returns 403 Forbidden because `VOLUME /var/lib/tvheadend`
+    in the upstream Dockerfile otherwise creates an empty
+    anonymous volume.
   - `compose.yml` updated so `tvheadend` uses the locally
     built `pvr-tvheadend:built` image (`pull_policy: never`)
     and attaches to both `eth1` and `pvr_internal`. New

@@ -49,6 +49,32 @@ One build-system file:
    bundle; you cannot add modules at runtime by just dropping a
    file in.
 
+One image-layer file:
+
+5. **`support/container-entrypoint.sh`** (replaces upstream's
+   entry script in the runner stage)
+   ```sh
+   #!/bin/sh
+   set -eu
+
+   if [ -d /config ]; then
+       exec tvheadend --config /config "$@"
+   else
+       exec tvheadend "$@"
+   fi
+   ```
+   The upstream `Dockerfile` declares `VOLUME /var/lib/tvheadend`,
+   so by default Compose creates an anonymous Docker volume there
+   and TVH starts with an empty runtime configuration. The webui
+   returns **403 Forbidden** with `[ERROR] access: No access
+   entries loaded` because there are no access control entries,
+   no DVR config, no EPG. The bind mount in `compose.yml` to
+   `/config` is unused.
+   
+   Fix: point TVH at our persistent config tree with its native
+   `--config` flag. We replace the upstream entry script in the
+   runner stage with this wrapper, and the webui starts working.
+
 ## How to rebuild
 
 The fork must be rebuilt any time upstream TVH ships a new release

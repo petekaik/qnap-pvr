@@ -35,8 +35,18 @@ services:
           cpus: '0.1'
           memory: 128M
     environment:
-      - PUID=0
-      - PGID=0
+      # TVH upstream Dockerfile runs the process as UID 100
+      # (the 'tvheadend' user created in the Dockerfile).
+      # The LinuxServer.io convention of PUID=0 / PGID=0 is
+      # for their image, which has an entrypoint that chowns
+      # /config to whatever PUID/PGID say. Our fork's
+      # upstream-style image has no such chown logic, so we
+      # pass the host's UID/GID that owns the bind-mounted
+      # ${DATA}/tvheadend/config tree. Override these in
+      # .env if your TVH config tree is owned by a different
+      # uid/gid on the host.
+      - PUID=${TVH_PUID:-100}
+      - PGID=${TVH_PGID:-101}
       - TZ=${TZ}
       # Post-processing path mapping (overridable via .env).
       - PVR_HOST_PREFIX=${PVR_HOST_PREFIX}
@@ -53,12 +63,6 @@ services:
       # Shell-only YAML parser used by post-recording.sh. Mounted into
       # /usr/local/bin so the script can . it directly.
       - ${DATA}/scripts/config-loader.sh:/usr/local/bin/config-loader.sh:ro
-      # Readiness probe — checks that /dev/dvb is populated. Mounted
-      # read-only so the container cannot mutate the host copy. The
-      # probe does NOT restart the container on failure (a fresh
-      # container would re-bind /dev/dvb from the same empty state);
-      # the host-side dvb-watchdog handles actual recovery.
-      - ${DATA}/scripts/tvh-healthcheck.sh:/usr/local/bin/tvh-healthcheck.sh:ro
       # Queue directories shared with the comskip/transcode containers.
       # post-recording.sh appends one JSONL line per recording into
       # both queues; the worker containers read and remove them.
@@ -259,12 +263,13 @@ services:
       - pvr_internal
     healthcheck:
       # 127.0.0.1 (not localhost) to dodge Alpine IPv6-first
-      # DNS behaviour.
+      # DNS behaviour. Python http.server takes a moment to
+      # warm up after container start — generous start_period.
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8765/api/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
 networks:
   pvr_internal:
