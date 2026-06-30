@@ -16,6 +16,20 @@ set -eu
 cd "$(dirname "$0")"
 PROJECT_DIR="$(pwd)"
 
+# If .env exists in the project root, source the specific
+# build-args we need rather than the whole file. .env on some
+# hosts has trailing comments on lines, which dot/source
+# chokes on; parsing the values we want sidesteps that.
+PVR_EXPOSER_LAN_URL=""
+if [ -f "$PROJECT_DIR/.env" ]; then
+    PVR_EXPOSER_LAN_URL="$(grep -E '^PVR_EXPOSER_LAN_URL=' \
+                              "$PROJECT_DIR/.env" \
+                            | head -1 | cut -d= -f2-)"
+fi
+: "${PVR_EXPOSER_LAN_URL:=http://10.0.10.13:8765}"
+
+export PVR_EXPOSER_LAN_URL
+
 CACHE_FLAG=""
 for arg in "$@"; do
     case "$arg" in
@@ -37,7 +51,10 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-queue-exposer"
 docker build $CACHE_FLAG -t pvr-queue-exposer:latest "$PROJECT_DIR/pvr-queue-exposer"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-tvheadend"
-docker build $CACHE_FLAG -t pvr-tvheadend:latest "$PROJECT_DIR/pvr-tvhd"
+docker build $CACHE_FLAG \
+    --build-arg PVR_EXPOSER_LAN_URL="${PVR_EXPOSER_LAN_URL:-http://10.0.10.13:8765}" \
+    -t pvr-tvheadend:latest \
+    "$PROJECT_DIR/pvr-tvhd"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] done"
 docker images | grep -E "^REPOSITORY|pvr-(base|comskip|transcode|queue-exposer|tvheadend)" || true

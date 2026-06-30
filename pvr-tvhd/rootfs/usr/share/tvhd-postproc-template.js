@@ -27,10 +27,16 @@ tvheadend.postproc = function() {
     // -------------------------------------------------------------
     // Konfig — pvr-queue-exposer -palvelimen osoite
     // -------------------------------------------------------------
-    // Oletusarvo on kontin hostname (DNS-resoluutio toimii
-    // pvr_internal-verkossa). Ylikirjoitettavissa window.PVR_EXPOSER_URL
-    // -muuttujalla ennen skriptin lataamista.
-    var EXPOSER_URL = window.PVR_EXPOSER_URL || ('http://pvr-queue-exposer:8765');
+    // The browser runs on the LAN and cannot resolve the
+    // in-compose hostname 'pvr-queue-exposer' (which lives on
+    // the isolated `pvr_internal` Docker network). To make the
+    // bridge reachable, compose.yml attaches pvr-queue-exposer
+    // to the macvlan network with a fixed LAN IP. This URL
+    // points at that macvlan interface. It can be overridden at
+    // runtime by setting window.PVR_EXPOSER_URL before this
+    // module's bundle loads — see .env.example for how the
+    // build-time default is sourced.
+    var EXPOSER_URL = window.PVR_EXPOSER_URL || '__PVR_EXPOSER_LAN_URL__';
     var REFRESH_MS = 10000;
     var FETCH_TIMEOUT_MS = 5000;
 
