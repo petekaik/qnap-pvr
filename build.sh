@@ -51,10 +51,31 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-queue-exposer"
 docker build $CACHE_FLAG -t pvr-queue-exposer:latest "$PROJECT_DIR/pvr-queue-exposer"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] building pvr-tvheadend"
+# pvr-tvhd/Dockerfile expects tvh-src/ inside its build
+# context so the builder stage can COPY it. tvh-src/ is
+# gitignored and is the working tree where the qnap-pvr
+# fork patches live (pvr_queue.c, webui.c, Makefile).
+# We rsync it in here so the build is self-contained.
+if [ -d "$PROJECT_DIR/tvh-src" ]; then
+    rsync -a --delete \
+        --exclude='.git' \
+        "$PROJECT_DIR/tvh-src/" \
+        "$PROJECT_DIR/pvr-tvhd/tvh-src/"
+else
+    echo "ERROR: $PROJECT_DIR/tvh-src not found." >&2
+    echo "  Clone TVH upstream and apply the qnap-pvr fork patches:" >&2
+    echo "    git clone --depth 1 https://github.com/tvheadend/tvheadend.git tvh-src" >&2
+    echo "    cp -a pvr-tvhd/pvr_queue.{c,h} tvh-src/src/webui/" >&2
+    echo "    # then patch Makefile, webui.c, Makefile.webui (see BACKLOG.md FP-1)" >&2
+    exit 1
+fi
 docker build $CACHE_FLAG \
     --build-arg PVR_EXPOSER_LAN_URL="${PVR_EXPOSER_LAN_URL:-http://10.0.10.13:8765}" \
     -t pvr-tvheadend:latest \
     "$PROJECT_DIR/pvr-tvhd"
+# Clean up the rsynced source tree so it doesn't pollute
+# the next pvr-tvhd edit / commit.
+rm -rf "$PROJECT_DIR/pvr-tvhd/tvh-src"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] done"
 docker images | grep -E "^REPOSITORY|pvr-(base|comskip|transcode|queue-exposer|tvheadend)" || true
