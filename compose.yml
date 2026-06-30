@@ -1,32 +1,12 @@
 services:
 
   tvheadend:
-    # PVR fork of the upstream linuxserver/tvheadend image. We
-    # copy a new `postproc.js` and lightly patched `dvr.js` /
-    # `status.js` into the upstream image's webui directory at
-    # build time. The upstream TVH serves every `*.js` in that
-    # directory via the standard bundle path, so the new module
-    # is reachable in the browser without any additional image
-    # patches.
-    #
-    # The Post-Processing tab in the webui fetches queue JSON
-    # from pvr-queue-exposer. The exposer is on the macvlan
-    # eth1 network with a fixed LAN IP (PVR_EXPOSER_IP) so the
-    # browser can reach it. See pvr-tvhd/README.md.
-    image: pvr-tvheadend:latest
-    pull_policy: build
-    build:
-      context: ./pvr-tvhd
-      # Bake the queue-exposer LAN URL into postproc.js at
-      # image build time. Compose reads PVR_EXPOSER_LAN_URL
-      # from .env automatically. The value lands in
-      # postproc.js, where the browser will fetch queue
-      # JSON from it. There is no way for the browser to
-      # discover this URL at runtime because the in-compose
-      # DNS name 'pvr-queue-exposer' is unreachable from the
-      # browser's network.
-      args:
-        PVR_EXPOSER_LAN_URL: ${PVR_EXPOSER_LAN_URL:-http://10.0.10.13:8765}
+    # Stock lscr.io/linuxserver/tvheadend image. The postproc
+    # webui patches are paused for now (see
+    # ~/.hermes/plans/postproc-webui.md). The compose healthcheck
+    # uses the upstream `tvh-healthcheck.sh` helper that ships
+    # with the image.
+    image: lscr.io/linuxserver/tvheadend:latest
     container_name: tvheadend
     hostname: tvheadend
     restart: unless-stopped
@@ -44,15 +24,12 @@ services:
           cpus: '0.1'
           memory: 128M
     environment:
-      # PUID/PGID are honored by the linuxserver/tvheadend
-      # entrypoint, which chowns /config to the requested uid
-      # at startup. 0/0 means "leave the host's existing
-      # permissions alone" which is what we want — the existing
-      # ${DATA}/tvheadend/config tree is owned by the host
-      # admin user, and changing that would break QNAP's
-      # permission model.
-      - PUID=0
-      - PGID=0
+      # PUID/PGID map the upstream container's internal 'abc'
+      # user to the host owner of ${DATA}/tvheadend/config. We
+      # use the existing admin uid/gid on the QNAP host. Compose
+      # reads PUID/PGID from .env automatically.
+      - PUID=${PUID:-0}
+      - PGID=${PGID:-0}
       - TZ=${TZ}
       # Post-processing path mapping (overridable via .env).
       - PVR_HOST_PREFIX=${PVR_HOST_PREFIX}
@@ -99,16 +76,13 @@ services:
       retries: 5
       start_period: 60s
     networks:
-      # eth1 (macvlan) gives TVH its fixed LAN IP. pvr_internal
-      # connects it to pvr-queue-exposer so the webui's
-      # Post-Processing tab can fetch queue JSON via XHR. macvlan
-      # networks cannot talk to bridge networks directly, so we
-      # explicitly attach TVH to both — the macvlan interface
-      # gives the LAN-facing address, the bridge interface
-      # gives the inter-service channel.
+      # eth1 (macvlan) gives TVH its fixed LAN IP (LOCAL_IPV4_1).
+      # TVH itself doesn't need to talk to the post-processing
+      # worker containers while this rolled-back state lasts;
+      # those containers run with network_mode: none and
+      # communicate with TVH via shared filesystem queues.
       eth1:
         ipv4_address: ${LOCAL_IPV4_1}
-      pvr_internal:
 
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -227,24 +201,14 @@ services:
 
   # pvr-queue-exposer — HTTP bridge that serves PVR queue files
   # and logs as JSON. Read-only MVP: GET /api/* endpoints, no
-  # POST.
-  #
-  # Two networks:
-  #   - pvr_internal — the inter-service Docker network. The
-  #     comskip and transcode queue directories are mounted
-  #     here, and TVH's compositor (e.g. status checks) reads
-  #     them through this network's DNS name.
-  #   - eth1 (macvlan) — exposes port 8765 to the LAN with a
-  #     fixed IP. The browser tab in the webui fetches queue
-  #     state from here, because the browser cannot resolve the
-  #     in-compose hostname 'pvr-queue-exposer'. The macvlan
-  #     interface means TVH and the browser both see this
-  #     address, but the queue file paths are still hidden
-  #     behind a JSON API.
-  #
-  # The endpoint is read-only. There are no secrets in the JSON
-  # responses; the only privacy implication is that LAN clients
-  # can see which recordings are queued or recently finished.
+  # POST. Lives on the isolated `pvr_internal` Docker network
+  # so it can read the queue file mounts from comskip and
+  # transcode. While the postproc webui work is paused, the
+  # browser has no way to reach this service (no in-TVH
+  # proxy), so it serves TVH-side compositing tools only.
+  # When the plan at ~/.hermes/plans/postproc-webui.md is
+  # executed, this service will gain a small in-TVH reverse
+  # proxy, and the macvlan connection will be dropped.
   pvr-queue-exposer:
     image: pvr-queue-exposer:latest
     pull_policy: build
@@ -281,9 +245,7 @@ services:
       - ${DATA}/transcoder/queue:/transcoder/queue:ro
       - ${DATA}/tvheadend/config/dvr/log:/var/log:ro
     networks:
-      pvr_internal:
-      eth1:
-        ipv4_address: ${PVR_EXPOSER_IP}
+      - pvr_internal
     healthcheck:
       # 127.0.0.1 (not localhost) to dodge Alpine IPv6-first
       # DNS behaviour. Python http.server takes a moment to
