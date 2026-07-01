@@ -1,12 +1,15 @@
 services:
 
   tvheadend:
-    # qnap-pvr fork of Tvheadend with the Post-Processing
-    # webui tab (FP-1 of BACKLOG.md). The stock image was
-    # replaced here once the C side and the webui module
-    # compiled cleanly. The fork image is built by
-    # pvr-tvhd/Dockerfile in this repo.
-    image: pvr-tvheadend:latest
+    # Stock lscr.io/linuxserver/tvheadend image. The qnap-pvr
+    # fork (pvr-tvheadend:latest, see pvr-tvhd/Dockerfile) was
+    # paused on 2026-07-01 after the postproc-webui C-tier
+    # route work hit a /pvr/api vs /qnap-api HTTP routing
+    # wall that requires upstream-architecture research to
+    # resolve. Reverting to the stock image keeps the
+    # recording pipeline stable while the next iteration
+    # models the fork on a known-good state.
+    image: lscr.io/linuxserver/tvheadend:latest
     container_name: tvheadend
     hostname: tvheadend
     restart: unless-stopped
@@ -23,17 +26,6 @@ services:
         reservations:
           cpus: '0.1'
           memory: 128M
-    # The fork's entrypoint execs tvheadend with the caller's
-    # args. We pass -c /var/tvheadend instead of -c /config
-    # because the realpath() call inside config_boot fails
-    # on /config specifically under this Alpine 3.20 + QNAP
-    # kernel combination (exit 78, "config error"). Mounting
-    # the same directory at /var/tvheadend sidesteps the
-    # realpath() call. See pvr-tvhd/Dockerfile for the
-    # entrypoint details and ~/.hermes/plans/postproc-webui.md
-    # for the upstream bug context.
-    command: ["-c", "/var/tvheadend"]
-    working_dir: /var/tvheadend
     environment:
       # PUID/PGID map the upstream container's internal 'abc'
       # user to the host owner of ${DATA}/tvheadend/config. We
@@ -47,14 +39,7 @@ services:
       - PVR_LOG_PATH=${PVR_LOG_PATH}
     privileged: true
     volumes:
-      # The fork container's /config and /var/tvheadend both
-      # point at the same host directory. /var/tvheadend is
-      # the one TVH actually uses (see command: above);
-      # /config is kept as a secondary mount so postproc-webui
-      # templates and other tooling that expect the path can
-      # still find it.
       - ${DATA}/tvheadend/config:/config
-      - ${DATA}/tvheadend/config:/var/tvheadend
       - ${DATA}/tvheadend/epg:/epg
       - ${DATA}/media/recordings:/recordings
       # TVH post-recording hook + shared config. Mounted read-only so
