@@ -352,3 +352,155 @@ of:
 The upstream TVH developer forum, the TVH
 GitHub issues, and the linuxserver.io community
 forums are the most likely sources.
+
+
+## Update 2026-07-01: Stock TVH works; the fork does not
+
+A critical follow-up test was run with the current
+(kimi-k2.7-code) model:
+
+1. **Stock `lscr.io/linuxserver/tvheadend:latest` was
+   started on the same host with the same config
+   directory and the same `-c /var/tvheadend`
+   workaround.** It starts cleanly and the browser
+   shows **all** tabs: EPG, Digital Video Recorder,
+   Configuration, Status, About. This contradicts the
+   earlier conclusion that the Comet `Illegal
+   constructor` error was an upstream bug. The error is
+   **fork-specific**.
+
+2. **A minimal fork image (only `pvr_queue.c` +
+   `http_path_add` in `webui.c`, no `dvr.js` /
+   `status.js` / `postproc.js` patches)** was built.
+   Even this minimal fork exits **78** when started,
+   regardless of whether `-c /config` or
+   `-c /var/tvheadend` is used. The stock image does
+   **not** exit 78 under the same mount and workdir
+   setup.
+
+3. **Conclusion**: the fork's startup failure is not
+   simply the known `realpath("/config")` bug. Either
+   the fork build introduces a different config-path
+   issue, or `pvr_queue.c` / the `webui.c` edits
+   corrupt the build in a way that only shows at
+   runtime. The browser-facing symptoms (Comet error,
+   missing tabs, 404/401 asymmetry) are downstream
+   effects of the fork failing to bootstrap correctly.
+
+4. **Implication**: before the webui tier can be
+   debugged, the **C-tier must be proven to start
+   cleanly**. The next iteration should produce a
+   minimal fork that starts and serves the stock webui
+   without errors. Only then should `dvr.js` /
+   `status.js` / `postproc.js` patches be re-applied
+   one at a time.
+
+## Recommended next-iteration strategy
+
+Given the model-limitations observed during this deep
+reverse-engineering pass, the next iteration should
+follow this sequence and **stop after each step until
+validated**:
+
+### Step A: Minimal-starting fork
+
+Create a clean build with **only** these changes:
+
+- `pvr_queue.c` / `pvr_queue.h` present in
+  `src/webui/`
+- `Makefile` includes `pvr_queue.c`
+- `webui.c` includes `pvr_queue.h`
+- `webui_init()` calls
+  `http_path_add("/qnap-api/queue", ..., pvr_api_handler, ...)`
+
+NO changes to `dvr.js`, `status.js`, `Makefile.webui`,
+no `postproc.js`. The handler can return a static
+`{"ok": true}` JSON to avoid reading queue files.
+
+Validate:
+
+- Container starts with `-c /var/tvheadend` and stays
+  running.
+- Browser shows stock webui tabs normally (no Comet
+  error).
+- `curl --digest -u pete:pass http://192.168.1.52:9981/qnap-api/queue/comskip`
+  returns 200 or 401, **not** 404.
+
+If this fails, the problem is either in `pvr_queue.c` or
+in how `webui.c` calls `http_path_add`. Use `strace` to
+compare the failing fork against the stock image at
+`config_boot()` / `realpath()` time.
+
+### Step B: Add webui module
+
+Once Step A passes, add `postproc.js` to
+`Makefile.webui` and rebuild. Validate that the bundle
+includes it and the stock tabs still render. Do **not**
+register it in `dvr.js` / `status.js` yet.
+
+### Step C: Register tabs
+
+Finally add the `dvr.js` and `status.js` calls to
+`tvh_postproc.*` functions. Validate that the new tabs
+appear and the `/qnap-api` endpoints return real data.
+
+### Tooling notes for the next model
+
+- Use `--no-cache` for every fork build; Docker COPY
+  layer caching repeatedly masked source updates in
+  this iteration.
+- Test against **port 9983** in a throwaway container
+  so the production TVH on 9981 keeps recording.
+- Keep the stock container `tvheadend` running; it was
+  healthy throughout this session.
+- The `id: command not found` noise in SSH output is
+  from the QNAP environment and can be ignored.
+
+
+---
+
+## Cleanup and archival notes (2026-07-01)
+
+### What was cleaned up
+
+**Local repo (`~/projects/qnap-pvr/`):**
+- Removed `pvr-tvhd/.webui-patch-backup/` — temporary JS-patch backups
+- Removed `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js.bak`
+- Kept canonical artifacts:
+  - `pvr-tvhd/Dockerfile`
+  - `pvr-tvhd/INVESTIGATION.md`
+  - `pvr-tvhd/README.md`
+  - `pvr-tvhd/pvr_queue.c`
+  - `pvr-tvhd/pvr_queue.h`
+  - `pvr-tvhd/rootfs/init.d/container-entrypoint.sh`
+  - `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js`
+
+**QNAP `storage:/share/Programs/pvr/`:**
+- Removed Docker tags `pvr-tvheadend:nopvrq` and `pvr-tvheadend:built`
+- Removed test containers (`tvh-fork-debug`, `tvh-fork-test`, `tvh-stock-debug`, `tvh-minimal-test`)
+- Kept `pvr-tvheadend:latest` as the last built reference image
+- Kept `backups/tvh-config-pre-fp1/` — TVH config backup taken before the fork experiment
+- **Not removed due to restricted QNAP shell environment** (`rm`/`python3` not in default PATH):
+  - `tvh-src/` (92 MB build working tree)
+  - `/tmp/tvh-build-*.log` and `/tmp/tvh-build-*.done`
+  - `/share/Programs/pvr/tmp/` runtime files
+  These can be deleted manually via a normal SSH session with `/bin/rm`, or left for the next iteration.
+
+### Final state
+
+- Production container `tvheadend` runs `lscr.io/linuxserver/tvheadend:latest` and is healthy.
+- All other PVR services (comskip, transcode, jellyfin) continue running.
+- All FP-1 source artifacts are committed to the GitHub repository.
+- The investigation report in `pvr-tvhd/INVESTIGATION.md` contains the full trail.
+
+### Recommendation
+
+Before the next FP-1 attempt, run a single cleanup command on the QNAP host:
+
+```sh
+ssh storage
+/bin/rm -rf /share/Programs/pvr/tvh-src
+/bin/rm -f /tmp/tvh-build-*.log /tmp/tvh-build-*.done
+```
+
+Then re-clone `tvh-src` from upstream and apply the patches listed in this document.
