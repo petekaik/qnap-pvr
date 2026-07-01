@@ -26,16 +26,20 @@
 
 var KIND_NAMES = { comskip: "Comskip", transcode: "Transcode" };
 
-/* Pull <kind>/{items, done, log} from /pvr/api/.
+/* Pull <kind>/{items, done, log} from /qnap-api/.
  * Returns a Promise<{items, donePaths, lastLog}>. Empty
  * fields are represented as [] so the grid always renders
  * a header row. Errors are swallowed — the dashboard is
- * best-effort and must not break the rest of the page. */
+ * best-effort and must not break the rest of the page.
+ *
+ * The /pvr/api prefix was tried first; TVH silently returns
+ * 404 for those routes even though pvr_api_handler is
+ * linked into the binary. /qnap-api/ resolves correctly. */
 function fetchQueue(kind) {
   return Promise.all([
-    fetch("/pvr/api/queue/" + kind,      { credentials: "same-origin" }).then(asJson),
-    fetch("/pvr/api/queue/" + kind + "/done", { credentials: "same-origin" }).then(asJson),
-    fetch("/pvr/api/log/"   + kind,      { credentials: "same-origin" }).then(asJson)
+    fetch("/qnap-api/queue/" + kind,      { credentials: "same-origin" }).then(asJson),
+    fetch("/qnap-api/queue/" + kind + "/done", { credentials: "same-origin" }).then(asJson),
+    fetch("/qnap-api/log/"   + kind,      { credentials: "same-origin" }).then(asJson)
   ]).then(function (triple) {
     return {
       items:     triple[0] && triple[0].items ? triple[0].items : [],
