@@ -18,6 +18,17 @@ tilan visualisointiin ja hallintaan.
 - **SYS** — Cross-cutting / infra
   (tietoturva, suorituskyky, ylläpito)
 
+**FP-1-tila (2026-07-01)**: PAUSED. C-tier toimii
+(pvr_api_handler TVH-binääristä löytyy, /pvr/api/queue/*
+palauttaa 401 = Digest-auth odotettu). Webui-tasolla
+kaksi estettä: (1) TVH:n Comet-bug `Failed to construct
+'Element': Illegal constructor` estää koko menu-renderin
+(selaimessa näkyy vain EPG-välilehti). (2) API-päätepisteet
+palauttavat 404 selaimesta mutta 401 kontin sisältä —
+epäsymmetrinen verkko-ongelma, syy selvittämättä.
+Stock TVH-image palautettu käyttöön. Ks.
+`pvr-tvhd/INVESTIGATION.md`.
+
 **WSJF-arvioinnin kentät (täytetään myöhemmin):**
 - **BV** — Business Value (1-13 fibonaccilla)
 - **TC** — Time Criticality (1-13)
