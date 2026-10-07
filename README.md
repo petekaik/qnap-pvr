@@ -2,19 +2,30 @@
 
 A lightweight, containerised personal video recorder (PVR) stack built
 for low-power Docker hosts such as a QNAP NAS. TVHeadend records DVB-T/T2
-broadcasts as MPEG-TS pass-through files. Two specialised post-processing
-containers consume the queue:
+broadcasts as MPEG-TS pass-through files. Three specialised post-processing
+containers work off that output, all reaching the host recordings via bind
+mounts and all running with `network_mode: none` (no network interface):
 
   - **comskip** runs commercial detection in real time (single-threaded,
     nice 19). It produces `.edl` files that mark the commercial breaks so
     Jellyfin can skip them on playback.
   - **transcode** converts the `.ts` recordings to H.264 MP4. Encoding
-    runs as a separate transcode pass with profile-based settings. Both
-    containers run with `network_mode: none` (no network interface) and
-    reach the host recordings via bind mounts.
+    runs as a separate transcode pass with profile-based settings,
+    scheduled for off-peak hours.
+  - **cc-extract** extracts DVB subtitles to `.srt` with CCExtractor. It
+    tails comskip's done-list rather than holding its own queue, so a
+    recording is only processed once commercial detection has finished
+    with it.
 
 The originals are preserved. Jellyfin serves both live TV and the
 recordings.
+
+An optional **tvhproxy** sidecar emulates an HDHomeRun tuner so Jellyfin
+and other HDHomeRun-aware clients (Plex, Channels, the HDHomeRun app) can
+discover TVHeadend over the LAN without Jellyfin acting as an intermediary.
+It is a fork of [chkuendig/tvhProxy](https://github.com/chkuendig/tvhProxy)
+with SSDP and SiliconDust binary discovery added — see
+[`tvhproxy/README.md`](./tvhproxy/README.md).
 
 ## Components
 
@@ -24,29 +35,31 @@ recordings.
 | `jellyfin`    | `jellyfin/jellyfin:latest`                     | Media server for live TV and recordings                     |
 | `comskip`     | built from `comskip/` → `pvr-comskip:latest`   | Real-time commercial detection, writes `.edl` next to `.ts` |
 | `transcode`   | built from `transcoder/` → `pvr-transcode:latest` | Drains the queue, transcodes to MP4, emits NFO/sidecars  |
-| `pvr-base`     | built from `pvr-base/` → `pvr-base:latest`     | Debian + ffmpeg + python3 + cron (FROM pvr-base)            |
-| `pvr-queue-exposer` | built from `pvr-queue-exposer/` → `pvr-queue-exposer:latest` | Read-only HTTP bridge for queue files (read by TVH internally; see `~/.hermes/plans/postproc-webui.md`) |
+| `cc-extract`  | built from `cc-extract/` → `pvr-cc-extract:latest` | Extracts DVB subtitles to `.srt`, tails comskip's done-list |
+| `tvhproxy`    | built from `tvhproxy/` → `pvr-tvhproxy:latest` | HDHomeRun protocol emulation for client auto-discovery      |
+| `pvr-queue-exposer` | built from `pvr-queue-exposer/` → `pvr-queue-exposer:latest` | Read-only HTTP bridge for queue files, consumed by the TVH webui plugin (see [`BACKLOG.md`](./BACKLOG.md)) |
+| `pvr-base`     | built from `pvr-base/` → `pvr-base:latest`     | Shared base image — Debian + ffmpeg + python3 + cron. Not a service |
 
 The `pvr-base` image is not a running service. It exists only as the
-shared build cache layer so the two specialised images (comskip / transcode)
-inherit the same packages without re-installing them on every build.
+shared build cache layer so the specialised images (comskip / transcode /
+cc-extract) inherit the same packages without re-installing them on every
+build.
 
-TVHeadend and Jellyfin get fixed IPs from a `macvlan` network (`eth1`).
-Comskip and transcode communicate with TVHeadend via JSONL files in
-`${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`, both mounted
-into the TVH container. The two worker containers run with
-`network_mode: none` — no network interface at all — so the queues
-are the only communication channel between them.
+TVHeadend, Jellyfin and tvhproxy get fixed IPs from a `macvlan` network
+(`eth1`). The worker containers communicate with TVHeadend via JSONL files
+in `${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`, both mounted
+into the TVH container. They run with `network_mode: none` — no network
+interface at all — so the queues are the only communication channel.
+cc-extract has no queue of its own; it tails comskip's done-list.
 
 ## Post-Processing webui (planned, not yet implemented)
 
-A `~/.hermes/plans/postproc-webui.md` plan describes adding a
-Post-Processing tab to TVH's Digital Video Recorder view, a
-Post-Processing panel to the Status view, a Settings entry for
-comskip/transcode configuration, and trigger/skip endpoints.
-The plan is paused while the rolled-back state is validated.
-See `pvr-tvhd/README.md` for context on what was rolled back
-and why.
+[`BACKLOG.md`](./BACKLOG.md) tracks the plan to add a Post-Processing tab
+to TVH's Digital Video Recorder view, a Post-Processing panel to the Status
+view, a Settings entry for comskip/transcode configuration, and trigger/skip
+endpoints. It is paused while the rolled-back state is validated — see
+[`pvr-tvhd/README.md`](./pvr-tvhd/README.md) for what was rolled back and
+why.
 
 ## Quick start
 
@@ -71,13 +84,20 @@ docker network create -d macvlan \
     eth1 || true
 
 # 4. Build and start.
-./build.sh                   # one-shot build of pvr-base + comskip + transcode
-docker compose up -d          # bring up all four services
+./build.sh                    # pvr-base, then the images that inherit from it
+docker compose up -d          # starts every service; Compose builds the
+                              # remaining images on demand
 ```
 
-`./build.sh` builds the three local images with a consistent layer
-ordering (`pvr-base` first, then the two specialised ones). See
+`./build.sh` builds the local images with a consistent layer ordering
+(`pvr-base` first, then the images that inherit from it). Services whose
+image is not pre-built are built by Compose on the first `up`. See
 [`build.sh`](./build.sh) for `--no-cache` and other flags.
+
+Running TVHeadend and Jellyfin under `.env.example`'s placeholders is not
+enough on its own — the stack expects a real `DATA` directory tree, a
+`macvlan` network, and `/dev/dvb` present on the host. `.env.example` is
+the canonical, commented list of every variable the stack reads.
 
 ## Directory layout on the host
 
@@ -110,7 +130,7 @@ ${DATA}/
 └── jellyfin/config/       # Jellyfin runtime data
 ```
 
-## Comskip and Transcode how they hook in
+### How they hook in
 
 TVHeadend appends a JSONL line to two queue files via the post-processor
 hook in `scripts/post-recording.sh`:
@@ -125,6 +145,10 @@ hook in `scripts/post-recording.sh`:
 - **transcode** drains the queue at a fixed schedule (`TRANSCODE_CRON`,
   default hourly), transcodes any pending work, and copies the EDL/TXT
   sidecars alongside the new `.mp4`. Originals stay where they are.
+- **cc-extract** has no queue of its own. It tails comskip's done-list, so
+  a recording reaches subtitle extraction only after commercial detection
+  has finished with it — a one-way dependency that keeps
+  `post-recording.sh` unaware of cc-extract.
 
 Both pools use a `flock` lockfile to ensure only one instance runs at a
 time per container.
@@ -280,28 +304,24 @@ your host's package manager or write the snippet manually).
 ┌─ <lan-iface> (macvlan) ──────────────────────┐  ┌─ network_mode: none ─────┐
 │  <tvheadend-ip>   tvheadend                  │  │  comskip                 │
 │  <jellyfin-ip>    jellyfin                   │  │  transcode               │
+│  <tvhproxy-ip>    tvhproxy                   │  │  cc-extract              │
 └──────────────────────────────────────────────┘  └──────────────────────────┘
                        ▲                          ▲
                        └────── share queue ───────┘
                               files on host
 ```
 
-TVHeadend and Jellyfin attach to a macvlan network (`eth1`) so
-they get fixed LAN IPs visible to clients on the home network.
-Comskip and transcode run with `network_mode: none` — they have
-no network interface at all. Communication between TVH and the
-workers happens entirely through shared filesystem queues
-(`${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`); no
-container ever opens a socket to another container. See
-[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#networks) for the
-full rationale.
-
-TVHeadend and Jellyfin use a Docker `macvlan` network (`eth1`) to
-get fixed LAN IPs. Comskip and transcode run with `network_mode: none`
-— they have no network interface at all. They only need to read
-files mounted from `${DATA}`. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#networks)
-for the full rationale on why this is more secure than the previous
-`internal: true` bridge setup.
+TVHeadend, Jellyfin and tvhproxy attach to a `macvlan` network (`eth1`) so
+they get fixed LAN IPs visible to clients on the home network. The worker
+containers (comskip, transcode, cc-extract) run with `network_mode: none`
+— they have no network interface at all, and reach the outside world only
+as files mounted from `${DATA}`. Communication between TVH and the workers
+happens entirely through those shared filesystem queues
+(`${DATA}/comskip/queue/` and `${DATA}/transcoder/queue/`); no container
+ever opens a socket to another. See
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#networks) for the full
+rationale on why this is more secure than the previous `internal: true`
+bridge setup.
 
 ## Security considerations
 
@@ -319,18 +339,46 @@ for the full rationale on why this is more secure than the previous
   permission is scoped to that single service.
 - `tvh-healthcheck.sh` is mounted read-only and probes only `/dev/dvb`,
   never the application config.
-- Comskip and transcode run with `network_mode: none` — they have
-  no network interface at all, so a vulnerability in FFmpeg's
-  demuxer or in comskip's commercial-detection code cannot reach
+- Comskip, transcode and cc-extract run with `network_mode: none` — they
+  have no network interface at all, so a vulnerability in FFmpeg's demuxer,
+  in comskip's commercial-detection code, or in CCExtractor cannot reach
   the LAN, the Jellyfin admin API, or the QNAP management UI.
+- tvhproxy's TVH credentials come from `.env` (`TVH_USER` / `TVH_PASSWORD`)
+  and are passed into the container as environment variables; the
+  matching TVH account is IP-allowlisted to the LAN, so the password alone
+  is not sufficient from an off-network host. Those TVH account files
+  (`tvhproxy/etc/`, `tvhproxy/passwd/`) are gitignored — they carry the
+  credential and the allow-list, and are host state rather than source.
 
 ## Related projects
 
-- **DVB tuner drivers for QNAP:** https://github.com/petekaik/qnap-dvb
-  Builds the kernel modules `em28xx`, `si2168`, `si2157`,
-  `videobuf2-*` and the `dvb-demod-si2168-b40-01.fw` firmware that
-  some QNAP kernels (which ship no DVB drivers) need in order to
-  expose Hauppauge / TBS / similar USB DVB tuners to TVHeadend.
+- **DVB tuner drivers for QNAP:** https://github.com/petekaik/qnap-driver-builder — builds
+  the kernel modules and supplies the firmware that a QNAP host needs before
+  TVHeadend can see a tuner at all (some QNAP kernels ship no DVB drivers). That
+  project owns the whole hardware side: drivers, firmware, `/dev/dvb` and
+  keeping them loaded across reboots and QTS updates. This repository starts
+  where it ends — at the device nodes already existing.
+
+This stack is built on other people's work:
+
+- **[TVHeadend](https://github.com/tvheadend/tvheadend)** — the recorder. This
+  repository uses the
+  [LinuxServer.io image](https://github.com/linuxserver/docker-tvheadend); the
+  paused fork is documented in [`pvr-tvhd/`](./pvr-tvhd/README.md).
+- **[tvhProxy](https://github.com/chkuendig/tvhProxy)** — HDHomeRun protocol
+  emulation, vendored into [`tvhproxy/`](./tvhproxy/README.md) with SSDP and
+  SiliconDust binary discovery added. The
+  [jkaberg fork](https://github.com/jkaberg/tvhProxy) is the more active
+  ancestor of the two upstreams.
+- **[Jellyfin](https://github.com/jellyfin/jellyfin)** — media server and
+  playback client.
+- **[Comskip](https://github.com/erikkaashoek/Comskip)** — commercial
+  detection.
+- **[CCExtractor](https://github.com/CCExtractor/ccextractor)** — DVB subtitle
+  extraction.
+- **[iptv-org/epg](https://github.com/iptv-org/epg)** and
+  **[WebGrab+Plus](https://github.com/WebGrabPlus)** — EPG grabbers, wired up
+  under [`examples/`](./examples/README.md).
 
 ## Documentation hygiene
 
@@ -339,7 +387,7 @@ commit any change to the documentation, run these checks:
 
 ```bash
 # 1. No host paths leaked into the docs.
-grep -rnE '/share/[A-Z]|/mnt/|/home/[a-z]+/|~/' README.md docs/ examples/
+grep -rnE '/share/[A-Z]|/mnt/|/home/[a-z]+/|~/' README.md docs/ examples/  # secretscan:ignore
 
 # 2. No LAN IPs or subnets.
 grep -rnE '192\.168\.|10\.0\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.' README.md docs/ examples/
