@@ -11,7 +11,7 @@ alternative EPG sources.
 For DVB tuner driver support on QNAP hardware, see the companion
 project:
 
-**https://github.com/petekaik/qnap-dvb**
+**https://github.com/petekaik/qnap-driver-builder**
 
 ## Examples included
 

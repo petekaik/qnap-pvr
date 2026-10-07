@@ -1,0 +1,35 @@
+# cc-extract container configuration.
+#
+# Read by /etc/cc-extract/scripts/ccextract-pool.sh at startup. We
+# use the same shell-only YAML parser that comskip-pool uses, so
+# the file format and parser semantics are identical to
+# /etc/comskip/config.yaml. No python or yaml libraries needed in
+# the container.
+#
+# Edit this file on the host at the path where you mounted
+# `./cc-extract/etc/` in compose.yml (e.g. `${DATA}/cc-extract/etc/`)
+# and restart the cc-extract container
+# (`docker compose restart cc-extract`) for changes to take effect.
+
+# Path to the ccextractor binary. Bullseye's apt package installs
+# it to /usr/bin/ccextractor; if you switch to a GitHub static
+# binary, change this to wherever you place it (e.g. /opt/ccextractor).
+ccextractor_binary: /usr/bin/ccextractor
+
+# Nice level for the ccextractor process. 19 = lowest priority,
+# yields to interactive workloads on the Celeron-based storage.
+# CCExtractor is light enough (a few seconds per hour of video)
+# that this rarely matters in practice, but keep it polite.
+nice_level: 19
+
+# Minimum bytes for an .srt file to be considered "real" output.
+# CCExtractor writes an empty file when the source has no DVB
+# subtitle track at all; we treat sub-MIN_SRT_BYTES files as "no
+# subtitles available" and still mark the path as done so we
+# don't retry it forever. 200 bytes catches a single empty cue
+# and rejects it, while still accepting a one-line header.
+min_srt_bytes: 200
+
+# Queue / log / done paths inside the container.
+log: /cc-extract/queue/cc-extract.log
+done: /cc-extract/queue/cc-extract-queue.done

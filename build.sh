@@ -26,7 +26,7 @@ if [ -f "$PROJECT_DIR/.env" ]; then
                               "$PROJECT_DIR/.env" \
                             | head -1 | cut -d= -f2-)"
 fi
-: "${PVR_EXPOSER_LAN_URL:=http://10.0.10.13:8765}"
+: "${PVR_EXPOSER_LAN_URL:=http://203.0.113.13:8765}"
 
 export PVR_EXPOSER_LAN_URL
 
@@ -79,7 +79,7 @@ else
     exit 1
 fi
 docker build $CACHE_FLAG \
-    --build-arg PVR_EXPOSER_LAN_URL="${PVR_EXPOSER_LAN_URL:-http://10.0.10.13:8765}" \
+    --build-arg PVR_EXPOSER_LAN_URL="${PVR_EXPOSER_LAN_URL:-http://203.0.113.13:8765}" \
     -t pvr-tvheadend:latest \
     "$PROJECT_DIR/pvr-tvhd"
 # Clean up the rsynced source tree so it doesn't pollute

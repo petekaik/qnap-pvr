@@ -6,7 +6,7 @@
 if ! command -v dotnet >/dev/null 2>&1; then
     echo "[custom-init] Installing .NET 9 runtime..."
     apk add --no-cache dotnet9-runtime dotnet-host >/dev/null 2>&1
-    ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet 2>/dev/null || true
+    ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet 2>/dev/null || true  # secretscan:ignore
     echo "[custom-init] .NET 9 installed"
 else
     echo "[custom-init] dotnet already present"

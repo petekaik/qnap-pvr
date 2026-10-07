@@ -49,6 +49,27 @@ services:
       # Shell-only YAML parser used by post-recording.sh. Mounted into
       # /usr/local/bin so the script can . it directly.
       - ${DATA}/scripts/config-loader.sh:/usr/local/bin/config-loader.sh:ro
+      # Dedicated "tvhproxy" user definition. The JSON file lives
+      # directly under the TVH config tree at
+      # ${DATA}/tvheadend/config/accesscontrol/<uuid>; the existing
+      # rw-mount of ${DATA}/tvheadend/config onto /config brings it
+      # in automatically. No extra bind-mount is needed.
+      #
+      # Why no bind-mount? Bind-mounting a single file into a
+      # rw-mounted parent (here: /config is bind-mounted rw) is
+      # fragile — TVH initialises missing files on first start by
+      # creating an empty placeholder under the requested name,
+      # which then shadows the bind-mount and the file shows up
+      # inside the container as a 0-byte stub. Writing the file
+      # straight into the config tree avoids that race.
+      #
+      # The tvhproxy/etc/ and tvhproxy/passwd/ directories in the
+      # working tree are the canonical source: they are gitignored
+      # because they carry the proxy credential and the LAN allow-list,
+      # and the install procedure (or a small helper) is expected to
+      # `cp` them into ${DATA}/tvheadend/config/{accesscontrol,
+      # passwd}/. See BACKLOG.md for the install-script work item.
+
       # linuxserver-image's tvh-healthcheck.sh — needed by the
       # compose healthcheck. Bind-mounted read-only.
       - ${DATA}/scripts/tvh-healthcheck.sh:/usr/local/bin/tvh-healthcheck.sh:ro
@@ -64,6 +85,11 @@ services:
       # inside the container is /pvr/tmp — see comskip-pool.sh,
       # transcode-pool.sh, and post-recording.sh.
       - ${DATA}/tmp:/pvr/tmp
+    # Host prerequisite: /dev/dvb with at least one frontend* node under
+    # adapterN/. Building and loading the DVB kernel modules and firmware
+    # is the job of the driver project — see
+    # https://github.com/petekaik/qnap-driver-builder. If /dev/dvb is missing here,
+    # the fix is on the host, not in this file.
     devices:
       - /dev/dvb:/dev/dvb
     healthcheck:
@@ -86,6 +112,61 @@ services:
       # communicate with TVH via shared filesystem queues.
       eth1:
         ipv4_address: ${LOCAL_IPV4_1}
+
+  cc-extract:
+    image: pvr-cc-extract:latest
+    pull_policy: build
+    build:
+      context: ./cc-extract
+      dockerfile: Dockerfile
+    container_name: cc-extract
+    hostname: cc-extract
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          # CCExtractor is light, but capping CPU keeps a runaway
+          # batch (many recordings finishing at once) from starving
+          # comskip/transcode/jellyfin on the Celeron. 0.5 core is
+          # plenty — typical extraction is a few seconds per hour
+          # of video.
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+    environment:
+      - TZ=${TZ}
+      # Operational disable: set to "false" in .env and restart the
+      # container to make cc-extract idle without removing the
+      # service from compose. Useful when the storage CPU is
+      # overtaxed — see cc-extract/etc/scripts/entrypoint.sh.
+      - CC_EXTRACT_ENABLED=${CC_EXTRACT_ENABLED}
+      # Orphan sidecar cleanup cron schedule. Same as comskip —
+      # default "0 4 * * *" runs at 04:00 daily. The orphan sweep
+      # runs even when CC_EXTRACT_ENABLED=false, so disabled state
+      # does not cause .srt accumulation.
+      - CLEANUP_CRON=${CLEANUP_CRON}
+    volumes:
+      - ${DATA}/media/recordings:/recordings
+      - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
+      # cc-extract config (config.yaml) — host-side edits take
+      # effect on container restart, no rebuild needed.
+      - ${DATA}/cc-extract/etc:/etc/cc-extract:ro
+      # Read-only mount of comskip's done-list. cc-extract does not
+      # write here; it tails the file for new lines and reacts.
+      - ${DATA}/comskip/queue:/comskip/queue:ro
+      - ${DATA}/cc-extract/queue:/cc-extract/queue
+      - ${DATA}/tmp:/pvr/tmp
+    # network_mode: none — same logic as comskip/transcode. ccextractor
+    # reads only local files and does not call out. The pool script
+    # tail -F's a host-mounted file. No network needed at runtime.
+    network_mode: none
 
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -143,6 +224,11 @@ services:
           memory: 64M
     environment:
       - TZ=${TZ}
+      # Orphan sidecar cleanup cron schedule. Default "0 4 * * *"
+      # runs at 04:00 daily — the same quiet hour as the transcode
+      # container's nightly job, so we concentrate I/O when the
+      # storage is otherwise idle. Override in .env to retune.
+      - CLEANUP_CRON=${CLEANUP_CRON}
     volumes:
       - ${DATA}/media/recordings:/recordings
       - ${DATA}/tvheadend/config/dvr/log:/config/dvr/log:ro
@@ -259,13 +345,81 @@ services:
       retries: 3
       start_period: 30s
 
+  tvhproxy:
+    # TVH → HDHomeRun-protokollaemulaattori. Perustuu chkuendig/
+    # tvhProxy-forkkiin (aktiivisin fork jkabergin arkistoidusta
+    # alkuperäisestä). Kuuntelee HDHomeRun-protokollaa portissa 5004
+    # ja lähettää SSDP-multicastia UDP 239.255.255.250:1900 jotta
+    # Jellyfin iOS -client löytää tämän automaattisesti lähiverkossa.
+    #
+    # Verkko: macvlan eth1:llä, kiinteä IP .56 — TVH (.52) ja
+    # tvhproxy (.56) ovat samassa broadcast-domainissa joten
+    # multicast-discovery toimii. SSDP-multicast-pakettien lähettäminen
+    # vaatii IP_MULTICAST/IGMP-socketin, joka toimii macvlan+eth1:n
+    # kautta (testattu storage-palvelimella).
+    #
+    # Ei network_mode: host -tilaan, jotta port 9981 pysyy
+    # macvlan-IP:n takana eikä altistu suoraan LAN:lle.
+    image: pvr-tvhproxy:latest
+    pull_policy: build
+    build:
+      context: ./tvhproxy
+      dockerfile: Dockerfile
+    container_name: tvhproxy
+    hostname: tvhproxy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          # tvhproxy on kevyt Flask+SSDP-palvelin, ei tarvitse
+          # paljon CPU:a. Multicast-pakettien lähetys on kuitenkin
+          # verkko-operaatio joka voi hetkellisesti kuormittaa.
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+    env_file:
+      # Tämä on ohut kerros .env-tiedoston päälle: vain muuttujat
+      # joita tvhproxy tarvitsee. .env.example määrittää oletusarvot
+      # ja compose-ympäristö overridaa ne.
+      - path: ${DATA}/tvhproxy/.env
+        required: false
+    environment:
+      # tvhProxy.py reads these as standalone config keys (it does NOT
+      # parse user/pass out of TVH_URL), and env_file entries that
+      # contain $ in the value can be stripped by docker-compose's env
+      # interpolation depending on QNAP's Container Station version, so
+      # pass them explicitly from the gitignored .env. The values MUST
+      # match TVH_URL above; rotate together.
+      TVH_USER: ${TVH_USER}
+      TVH_PASSWORD: ${TVH_PASSWORD}
+    networks:
+      eth1:
+        ipv4_address: ${LOCAL_IPV4_3}
+    healthcheck:
+      # discover.json palauttaa HDHomeRun-laitteen metadatan.
+      # healthcheck varmistaa että Flask-vastaa ja SSDP-rekisteröinti
+      # on suoritettu (käynnistys kestää ~5s Python + Flaskin
+      # importtien takia).
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:5004/discover.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
 networks:
   pvr_internal:
     name: pvr_internal
     internal: true
     ipam:
       config:
-        - subnet: 172.25.0.0/16
+        - subnet: 172.25.0.0/16  # secretscan:ignore (compose-internal network, not a host address)
   eth1:
     external: true
     name: eth1

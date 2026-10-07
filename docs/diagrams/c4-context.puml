@@ -11,7 +11,7 @@ System(pvr, "PVR Stack", "TVHeadend + Jellyfin + comskip + transcode on a Docker
 
 System_Ext(antenna, "DVB-T/T2 antenna", "Free-to-air broadcast signal")
 System_Ext(clients, "Playback clients", "Browsers, mobile apps, smart TVs, DLNA clients")
-System_Ext(github, "GitHub", "Source repo: github.com/petekaik/qnap-pvr (and qnap-dvb for DVB drivers)")
+System_Ext(github, "GitHub", "Source repo: github.com/petekaik/qnap-pvr (and qnap-driver-builder for DVB drivers)")
 
 Rel(antenna, pvr, "Delivers broadcast", "DVB-T/T2 RF signal")
 Rel(user, clients, "Operates")

@@ -29,3 +29,11 @@ Thumbs.db
 
 # TVH upstream source — local build dependency only
 tvh-src/
+
+# tvhproxy: TVH access-control + passwd JSON. These carry the proxy
+# credential and the LAN allow-list, so they are host state, not source.
+# ${DATA}/tvheadend/config/ holds the authoritative copy the container
+# actually reads; regenerate the repo copies from .env when installing
+# (see the install-script work item in BACKLOG.md).
+tvhproxy/etc/
+tvhproxy/passwd/

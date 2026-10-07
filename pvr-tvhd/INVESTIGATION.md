@@ -34,7 +34,7 @@ The Docker side is also complete:
 |---|---|
 | `pvr-tvhd/Dockerfile` (4.4 KB) | Multi-stage Alpine 3.20 build |
 | `pvr-tvhd/rootfs/init.d/container-entrypoint.sh` (440 B) | Minimal entrypoint that `exec`s `tvheadend` |
-| `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` | The webui module |
+| `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` | The webui module <!-- secretscan:ignore --> |
 | `pvr-tvhd/pvr_queue.c`, `pvr-tvhd/pvr_queue.h` | Reference copies of the C source |
 | `pvr-tvhd/README.md` | Status of the fork |
 
@@ -45,7 +45,7 @@ Build pipeline:
 - `tvh-src/` is gitignored; it's the working tree
   where the TVH upstream + our patches live. The
   build pulls `postproc.js` from
-  `pvr-tvhd/rootfs/usr/share/...` into
+  `pvr-tvhd/rootfs/usr/share/...` into <!-- secretscan:ignore -->
   `tvh-src/src/webui/static/app/` automatically so
   the MKBUNDLE step picks it up.
 
@@ -134,7 +134,7 @@ of the same URL differs from the outside. Two
 plausible causes:
 
 1. **macvlan reverse-path filtering**: TVH is on
-   the macvlan network `eth1` with IP `192.168.1.52`.
+   the macvlan network `eth1` with IP `203.0.113.52`.
    The QNAP kernel may drop packets from the
    macvlan IP to the same macvlan IP via the
    bridge, depending on `rp_filter` settings.
@@ -202,6 +202,9 @@ the next iteration can pick up from here.
    `comskip/`, `transcoder/`, `pvr-base/`, `scripts/`.
 2. **DVB module loader** — QNAP `autorun.sh` +
    `/etc/rcS.d/S98dvb-loader` + watchdog cron.
+   *(Host-side hardware concern: moved out to the driver project,
+   `qnap-driver-builder` → `docs/01-boot-and-persistence.md`. Kept here only as
+   history.)*
 3. **First TVH fork attempt** —
    `pvr_queue.c` + `http_path_add` + Makefile,
    build succeeds.
@@ -238,7 +241,7 @@ the next iteration can pick up from here.
 11. **User feedback: only EPG tab visible in
     browser**. Switched to Playwright
     investigation with the credentials from
-    `storage:/share/Programs/pvr/.env`.
+    the host's `.env`.
 12. **Playwright found**:
     - `tvheadend.dvr` and `tvheadend.status` exist
       as functions
@@ -262,7 +265,7 @@ will build and run on a fresh checkout that has
 
 - `pvr-tvhd/Dockerfile` — multi-stage TVH build
 - `pvr-tvhd/rootfs/init.d/container-entrypoint.sh`
-- `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js`
+- `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` <!-- secretscan:ignore -->
 - `pvr-tvhd/pvr_queue.c` / `pvr_queue.h`
 - `pvr-tvhd/README.md` — current status
 - `BACKLOG.md` — FP-1 still open; FP-2/3/4
@@ -277,8 +280,7 @@ re-create it with:
 
 ```sh
 git clone --depth 1 https://github.com/tvheadend/tvheadend.git tvh-src
-cp -a pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js \
-      tvh-src/src/webui/static/app/
+cp -a pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js tvh-src/src/webui/static/app/  # secretscan:ignore
 cp -a pvr-tvhd/pvr_queue.c tvh-src/src/webui/
 cp -a pvr-tvhd/pvr_queue.h tvh-src/src/webui/
 # Then apply the patches to Makefile, webui.c,
@@ -423,7 +425,7 @@ Validate:
   running.
 - Browser shows stock webui tabs normally (no Comet
   error).
-- `curl --digest -u pete:pass http://192.168.1.52:9981/qnap-api/queue/comskip`
+- `curl --digest -u <user>:<password> http://203.0.113.52:9981/qnap-api/queue/comskip`
   returns 200 or 401, **not** 404.
 
 If this fails, the problem is either in `pvr_queue.c` or
@@ -465,7 +467,7 @@ appear and the `/qnap-api` endpoints return real data.
 
 **Local repo (`~/projects/qnap-pvr/`):**
 - Removed `pvr-tvhd/.webui-patch-backup/` — temporary JS-patch backups
-- Removed `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js.bak`
+- Removed `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js.bak` <!-- secretscan:ignore -->
 - Kept canonical artifacts:
   - `pvr-tvhd/Dockerfile`
   - `pvr-tvhd/INVESTIGATION.md`
@@ -473,9 +475,9 @@ appear and the `/qnap-api` endpoints return real data.
   - `pvr-tvhd/pvr_queue.c`
   - `pvr-tvhd/pvr_queue.h`
   - `pvr-tvhd/rootfs/init.d/container-entrypoint.sh`
-  - `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js`
+  - `pvr-tvhd/rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` <!-- secretscan:ignore -->
 
-**QNAP `storage:/share/Programs/pvr/`:**
+**QNAP host (`${DATA}/`):**
 - Removed Docker tags `pvr-tvheadend:nopvrq` and `pvr-tvheadend:built`
 - Removed test containers (`tvh-fork-debug`, `tvh-fork-test`, `tvh-stock-debug`, `tvh-minimal-test`)
 - Kept `pvr-tvheadend:latest` as the last built reference image
@@ -483,7 +485,7 @@ appear and the `/qnap-api` endpoints return real data.
 - **Not removed due to restricted QNAP shell environment** (`rm`/`python3` not in default PATH):
   - `tvh-src/` (92 MB build working tree)
   - `/tmp/tvh-build-*.log` and `/tmp/tvh-build-*.done`
-  - `/share/Programs/pvr/tmp/` runtime files
+  - `${DATA}/tmp/` runtime files
   These can be deleted manually via a normal SSH session with `/bin/rm`, or left for the next iteration.
 
 ### Final state
@@ -498,8 +500,8 @@ appear and the `/qnap-api` endpoints return real data.
 Before the next FP-1 attempt, run a single cleanup command on the QNAP host:
 
 ```sh
-ssh storage
-/bin/rm -rf /share/Programs/pvr/tvh-src
+ssh your-host
+/bin/rm -rf /path/to/pvr/tvh-src
 /bin/rm -f /tmp/tvh-build-*.log /tmp/tvh-build-*.done
 ```
 

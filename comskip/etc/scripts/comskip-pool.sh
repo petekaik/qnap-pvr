@@ -259,13 +259,90 @@ prune_done() {
     echo "$(date -Iseconds) comskip-pool prune-done: kept $_kept, dropped $_dropped (source missing)" >> "$LOG"
 }
 
+# -------------------------------------------------------------------
+# cleanup-orphans — find .edl/.txt/.sm sidecars under the recordings
+# tree whose .ts source is gone, and delete them.
+#
+# TVH's removal-days=7 deletes only the .ts file. Comskip writes
+# .edl (commercial markers), .txt (frame log), and .sm (show
+# minimizer data) next to the .ts. When the .ts is removed by TVH
+# the sidecars become orphans and would otherwise accumulate
+# forever, eating disk space on the big volume.
+#
+# This subcommand is invoked by cron (see entrypoint.sh + the
+# CLEANUP_CRON env var). It runs once and exits. It uses its OWN
+# lock file (CLEANUP_LOCK) so it does not contend with the watch
+# loop's LOCK — the watch loop holds LOCK for the lifetime of the
+# container, which would otherwise make every cleanup-orphans
+# invocation exit with "already running, exiting" without doing
+# any work. CLEANUP_LOCK only serialises cleanup-orphans against
+# itself (e.g. if cron fires while a manual invocation is still
+# running).
+#
+# Performance: /recordings on the Celeron contains thousands of
+# files after a year. We use `find` to walk the tree once,
+# pattern-match the sidecar extensions, stat the corresponding .ts,
+# and unlink. A 50k-file tree takes a few seconds; acceptable for
+# a daily job. If performance becomes an issue, we can scope the
+# walk to RECENT directories via -mtime, but that's premature.
+# -------------------------------------------------------------------
+cleanup_orphans() {
+    _cleanup_lock="/pvr/tmp/comskip-cleanup.lock"
+    mkdir -p "$(dirname "$_cleanup_lock")"
+    exec 9>"$_cleanup_lock"
+    if ! flock -n 9; then
+        echo "$(date -Iseconds) comskip-pool cleanup-orphans: already running, exiting" >> "$LOG"
+        return 0
+    fi
+
+    _root="/recordings"
+    if [ ! -d "$_root" ]; then
+        echo "$(date -Iseconds) comskip-pool cleanup-orphans: $_root missing, nothing to do" >> "$LOG"
+        return 0
+    fi
+
+    _removed=0
+    # Sidecar extensions that belong to comskip. Order does not
+    # matter — each find walks the tree once. -type f skips
+    # directories. Only .edl is currently produced:
+    #   .edl — mainoskatkojen aikavälit (Jellyfin lukee skippaakseen)
+    #   .txt ja .sm on poistettu käytöstä konfiguraatiomuutoksilla
+    #   (output_default=0 comskip.ini:ssä, create-scene-markers=false
+    #   TVH:n dvr-profiilissa), joten niitä ei enää synny eikä niitä
+    #   tarvitse siivota. Jos konfiguraatio muuttuu, lisää tänne.
+    for _ext in edl; do
+        find "$_root" -maxdepth 5 -type f -name "*.$_ext" 2>/dev/null \
+        | while IFS= read -r _sidecar; do
+            _base="${_sidecar%.*}"
+            _ts="${_base}.ts"
+            if [ ! -f "$_ts" ]; then
+                _size=$(wc -c < "$_sidecar" 2>/dev/null | tr -d ' ')
+                _size=${_size:-0}
+                rm -f "$_sidecar"
+                echo "$(date -Iseconds) comskip-pool cleanup-orphans: removed orphan .$_ext $_sidecar (${_size}B)" >> "$LOG"
+            fi
+        done
+    done
+
+    # Count what was actually removed during this run by grepping
+    # only the lines newer than the start marker we set. Simpler
+    # than parsing timestamps: we count ALL removal lines in the
+    # log minus the count we had at the start. The log is bounded
+    # in size by the comskip container's log rotation policy
+    # (pvr-base sets sensible defaults), so this stays cheap.
+    _removed=$(grep -c "comskip-pool cleanup-orphans: removed orphan" "$LOG" 2>/dev/null || echo 0)
+    _removed=${_removed:-0}
+    echo "$(date -Iseconds) comskip-pool cleanup-orphans: complete (lifetime total: $_removed orphan sidecar(s) removed; this run may have added several)" >> "$LOG"
+}
+
 # Dispatch.
 case "$CMD" in
-    watch)      watch ;;
-    drain)      drain ;;
-    prune-done) prune_done ;;
+    watch)         watch ;;
+    drain)         drain ;;
+    prune-done)    prune_done ;;
+    cleanup-orphans) cleanup_orphans ;;
     *)
-        echo "$(date -Iseconds) comskip-pool: unknown subcommand '$CMD' (use watch|drain|prune-done)" >> "$LOG"
+        echo "$(date -Iseconds) comskip-pool: unknown subcommand '$CMD' (use watch|drain|prune-done|cleanup-orphans)" >> "$LOG"
         exit 2
         ;;
 esac

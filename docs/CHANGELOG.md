@@ -37,7 +37,7 @@ the section for whatever service they are debugging.
 
 - Stripped host-specific details from the documentation. Replaced
   concrete `/share/Programs/pvr/...` paths with `${DATA}/...`,
-  concrete IPs (`192.168.1.52` / `.53`) with `LOCAL_IPV4_*`
+  concrete LAN IPs with `LOCAL_IPV4_*`
   placeholders, host-typo jargon (`TS-X51`, `Celeron J1900`,
   `Hauppauge dualHD`) with hardware-agnostic wording. Added a
   `Documentation hygiene` section to `README.md` with `grep`

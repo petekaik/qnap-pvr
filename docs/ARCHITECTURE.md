@@ -390,7 +390,7 @@ and the `Elokuva_` prefix is stripped from the filename.
 
 ## Related projects
 
-- **DVB tuner drivers for QNAP:** https://github.com/petekaik/qnap-dvb
+- **DVB tuner drivers for QNAP:** https://github.com/petekaik/qnap-driver-builder
 
 ## Security considerations
 

@@ -90,7 +90,7 @@ and in commit messages.
 |---|---|
 | `Dockerfile` | Multi-stage build: builder compiles TVH from `tvh-src/`, runner installs the binary + entrypoint |
 | `rootfs/init.d/container-entrypoint.sh` | Minimal entrypoint that execs `tvheadend` with the caller's args |
-| `rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` | The webui module loaded by the TVH bundle |
+| `rootfs/usr/share/tvheadend/src/webui/static/app/postproc.js` | The webui module loaded by the TVH bundle <!-- secretscan:ignore --> |
 | `pvr_queue.c` / `pvr_queue.h` | Reference copies of the C side of the fork (the live copy lives in `tvh-src/`) |
 
 ## Build
