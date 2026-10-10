@@ -83,12 +83,14 @@ each one needs an image supplied. Four now have one, placed in
 | One Way TV | `onewaytv.png` | onewaymission.fi (`OWTV-logo-mini.png`) |
 | onniTV | `onnitv.png` | onnitv.fi (`onnitv-logo.png`) |
 
-**Iskuri.net** is the one still outstanding: it is an adult channel
-(historically Sextv.fi / Digiviihde), and the only image on a neutral source
-is the *historic* Digiviihde logo from Wikipedia — the wrong brand. Its
-current mark lives only on the channel's own site. Supply a PNG under any
-unused name and the recipe above installs it in one command. List anything
-still broken with:
+**Iskuri.net** was the one gap with no image available: an adult channel
+(historically Sextv.fi / Digiviihde) whose current mark lives only on its own
+site, while the sole neutral source — Wikipedia — carries the *historic*
+Digiviihde logo, i.e. the wrong brand. As of 2026-10-10 the channel (and the
+nameless `PMT:` ghost channel, which also had no icon) is **disabled in TVH**
+instead: it advertises no icon, so nothing errors, and it no longer appears in
+Jellyfin's guide. Supply a PNG under any unused name to reinstate it with the
+recipe above. List anything still icon-less with:
 
 ```bash
 docker exec tvhproxy sh -c 'curl -s --digest -u "$TVH_USER:$TVH_PASSWORD" \
