@@ -98,13 +98,34 @@ never handed to Jellyfin.
 The guide's `UriFormatException` has a different cause. The plugin rebuilds
 an absolute URL from that relative reference and embeds the TVH account's
 credentials in it **unencoded**, producing
-`http://<user>:<password>@<tvh-host>:<port>/imagecache/<id>`. If that
-password contains characters that are not valid in URI userinfo — `@`, or a
-`%` not followed by two hex digits — .NET rejects the URL with
-`Invalid URI: The hostname could not be parsed`, and every channel image
-fails. Measured on this deployment 2026-10-10 against Jellyfin 12.2.0 and
-plugin 15.0.0.0. The remedy is a **URL-safe (alphanumeric) password** on
-whichever TVH account the plugin authenticates with.
+`http://<user>:<password>@<tvh-host>:<port>/imagecache/<id>`.
+
+Two things are needed to make that work, and both were measured on this
+deployment on 2026-10-10 against Jellyfin 12.2.0 and plugin 15.0.0.0:
+
+1. **A URL-safe (alphanumeric) password** on whichever TVH account the
+   plugin authenticates with. A password containing `@`, or a `%` not
+   followed by two hex digits, makes .NET reject the URL outright:
+   `Invalid URI: The hostname could not be parsed`.
+2. **An access-control entry in TVH granting the Jellyfin host
+   unauthenticated access.** The plugin embeds credentials in the URL
+   precisely so the fetch can authenticate, but Jellyfin's `HttpClient`
+   does not turn URI userinfo into an Authorization header — so the
+   request arrives anonymous. TVH accepts only **digest** on
+   `/imagecache` (measured: no auth → 401, basic → 401, digest → 200),
+   and without an entry the fetch fails with
+   `HttpRequestException: … 401 (Unauthorized)`.
+
+   An entry with username `*` (TVH's anonymous user), a prefix limited to
+   the Jellyfin host (`<jellyfin-ip>/32`) and **streaming rights only** is
+   sufficient: the `/imagecache` route accepts `ACCESS_STREAMING`, so the
+   web UI stays password-protected and nothing else on the LAN is
+   affected. Verified: the same URL returns 200 from the Jellyfin host and
+   still 401 from any other.
+
+Also note the plugin **logs the credentialed URL**, so the TVH password
+appears in cleartext in Jellyfin's log whenever an image fetch fails. Do
+not share those logs; rotate the account if they have been.
 
 Serving the picons here is still worth keeping — it is what TVH's own image
 cache fetches from, and it keeps `chiconpath` reachable by any consumer that

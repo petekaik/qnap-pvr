@@ -13,15 +13,26 @@ the section for whatever service they are debugging.
 
 ### Fixed
 
-- **CORRECTION to the entry below: it does not fix Jellyfin's channel-image
-  errors, and that entry overstates its effect.** TVH never hands Jellyfin
-  the configured icon URL: for HTSP ≥ 15 (the plugin negotiates 44)
-  `htsp_image()` substitutes a **relative** `imagecache/<id>` reference. The
-  real cause of the `UriFormatException` in the guide is the plugin
-  rebuilding an absolute URL from that reference with the TVH account's
-  credentials embedded **unencoded** (`http://user:password@host:9981/…`),
-  which .NET rejects when the password is not URL-safe. Remedy: a URL-safe
-  password for the plugin's TVH account. See
+- **Channel icons in Jellyfin: FIXED, and it took two changes, neither of
+  them the picon work below.** TVH never hands Jellyfin the configured icon
+  URL — for HTSP ≥ 15 (the plugin negotiates 44) `htsp_image()`
+  substitutes a **relative** `imagecache/<id>` reference, and the plugin
+  rebuilds an absolute URL from it with the TVH account's credentials
+  embedded **unencoded** (`http://user:password@host:9981/imagecache/<id>`).
+  Two defects stacked, each hiding the next:
+  1. the password was not URL-safe, so .NET rejected the URL outright
+     (`UriFormatException: Invalid URI: The hostname could not be parsed`);
+  2. once it parsed, the fetch arrived anonymous — Jellyfin's `HttpClient`
+     does not apply URI userinfo as an Authorization header, and TVH
+     accepts only **digest** on `/imagecache` — giving
+     `HttpRequestException: … 401 (Unauthorized)`.
+  Resolved with a URL-safe password on a dedicated TVH account plus a TVH
+  access entry (`*`, prefix limited to the Jellyfin host, streaming rights
+  only). Verified working 2026-10-10 on Jellyfin 12.2.0 / plugin 15.0.0.0,
+  and a recording scheduled from Jellyfin's EPG now lands in TVH as a real
+  DVR entry (`scheduled for recording by "jellyfin"`). Note the plugin
+  logs the credentialed URL, so the TVH password appears in cleartext in
+  Jellyfin's log on every failed image fetch. See
   [README](./README.md#channel-logos-picons).
 - **tvhproxy: channel logos now reach Jellyfin (T2/T1, `tvhproxy` +
   `tvheadend` config).** TVH advertised `file:///picons/…` channel
