@@ -127,6 +127,27 @@ Also note the plugin **logs the credentialed URL**, so the TVH password
 appears in cleartext in Jellyfin's log whenever an image fetch fails. Do
 not share those logs; rotate the account if they have been.
 
+**Channel icon overrides.** The picon set that ships inside the tvheadend
+image is a pan-European collection with name collisions, and TVH's
+service-name scheme picks the wrong file wherever names collide. Measured:
+Finnish **TV5** resolves to `tv5.png`, which is **IRIB TV5**, an Iranian
+Quran channel; the set also mislabels `tvfinland.png`, which is really the
+**Frii** logo. The fix is to place the correct image under a name nothing
+else uses and point the channel at it. No TVH restart is needed, so an
+in-flight recording is not disturbed:
+
+```bash
+cp <correct-logo>.png "${DATA}/picons/tv5-fi.png"
+curl -s --digest -u "$TVH_USER:$TVH_PASSWORD" -X POST \
+  --data-urlencode \
+  'node={"uuid":"<channel-uuid>","icon":"http://<tvhproxy-ip>:5004/picons/tv5-fi.png"}' \
+  "http://<tvh-ip>:9981/api/idnode/save"
+```
+
+The channel then gets a fresh `imagecache/<id>`, and Jellyfin picks up the
+new URL on its next guide refresh. Get `<channel-uuid>` from
+`/api/channel/grid`.
+
 Serving the picons here is still worth keeping — it is what TVH's own image
 cache fetches from, and it keeps `chiconpath` reachable by any consumer that
 takes the raw icon — but it is not what Jellyfin's errors were about.
