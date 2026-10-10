@@ -69,6 +69,23 @@ docker compose start tvheadend
 service-named picon exists and log a failed download for each one. The
 service-named set is not in the image anyway.
 
+**Known gap — parked.** A handful of channels (5 as of 2026-10-10) carry no
+stored `icon` and fall back to a service picon that the image does not
+ship, so TVH resolves them to `file:///picons/<service-id>.png`, which is
+a dead path and still errors in Jellyfin. They are pre-existing, not
+caused by the HTTP move, and cannot be fixed by configuration alone: there
+is no matching image in the picon set to point them at. List them with:
+
+```bash
+docker exec tvhproxy sh -c 'curl -s --digest -u "$TVH_USER:$TVH_PASSWORD" \
+  "http://<tvh-ip>:9981/api/channel/grid?limit=999&start=0"' \
+  | tr ',' '\n' | grep -o '"icon":"picon://[^"]*"'
+```
+
+Fixing them means supplying a logo file per channel, or clearing the
+service-picon association so TVH advertises no icon at all (which stops
+the error but shows no logo).
+
 ## Components
 
 | Container     | Image (build context / source)                | Role                                                        |
