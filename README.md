@@ -69,22 +69,35 @@ docker compose start tvheadend
 service-named picon exists and log a failed download for each one. The
 service-named set is not in the image anyway.
 
-**Known gap — parked.** A handful of channels (5 as of 2026-10-10) carry no
-stored `icon` and fall back to a service picon that the image does not
-ship, so TVH resolves them to `file:///picons/<service-id>.png`, which is
-a dead path and still errors in Jellyfin. They are pre-existing, not
-caused by the HTTP move, and cannot be fixed by configuration alone: there
-is no matching image in the picon set to point them at. List them with:
+**Channels with no usable picon — status 2026-10-10.** Five channels carried
+no stored `icon` and fell back to a service picon the image does not ship,
+so TVH resolved a dead path and Jellyfin logged an "does not have an image"
+error per request. Pre-existing, and not fixable by configuration alone —
+each one needs an image supplied. Four now have one, placed in
+`${DATA}/picons/` and pointed at with the override recipe below:
+
+| channel | file | source |
+|---|---|---|
+| TV5 | `tv5-fi.png` | Wikimedia Commons — the 2024 rebrand mark |
+| MTV Ava | `mtvava.png` | the set's own `ava tv.png` (the AVA wordmark) |
+| One Way TV | `onewaytv.png` | onewaymission.fi (`OWTV-logo-mini.png`) |
+| onniTV | `onnitv.png` | onnitv.fi (`onnitv-logo.png`) |
+
+**Iskuri.net** is the one still outstanding: it is an adult channel
+(historically Sextv.fi / Digiviihde), and the only image on a neutral source
+is the *historic* Digiviihde logo from Wikipedia — the wrong brand. Its
+current mark lives only on the channel's own site. Supply a PNG under any
+unused name and the recipe above installs it in one command. List anything
+still broken with:
 
 ```bash
 docker exec tvhproxy sh -c 'curl -s --digest -u "$TVH_USER:$TVH_PASSWORD" \
   "http://<tvh-ip>:9981/api/channel/grid?limit=999&start=0"' \
-  | tr ',' '\n' | grep -o '"icon":"picon://[^"]*"'
+  | tr '}' '\n' | grep '"icon":"picon://'
 ```
 
-Fixing them means supplying a logo file per channel, or clearing the
-service-picon association so TVH advertises no icon at all (which stops
-the error but shows no logo).
+Clearing a channel's icon instead makes TVH advertise none, which stops the
+error but shows no logo.
 
 **Correction (added later the same day — read this before trusting the
 section above).** An earlier version of this section implied that serving
