@@ -25,7 +25,49 @@ and other HDHomeRun-aware clients (Plex, Channels, the HDHomeRun app) can
 discover TVHeadend over the LAN without Jellyfin acting as an intermediary.
 It is a fork of [chkuendig/tvhProxy](https://github.com/chkuendig/tvhProxy)
 with SSDP and SiliconDust binary discovery added — see
-[`tvhproxy/README.md`](./tvhproxy/README.md).
+[`tvhproxy/README.md`](./tvhproxy/README.md). It also serves the channel
+logos (picons) at `/picons/` — see [Channel logos](#channel-logos-picons).
+
+### Channel logos (picons)
+
+TVHeadend hands its clients a channel icon URL verbatim, and the
+linuxserver image it is configured to use points at
+`file:///picons/%C.png`. No HTTP client can fetch a `file://` URL, so
+Jellyfin failed the image fetch for every channel on every guide refresh
+(34 errors / 21 channels over three days, measured 2026-10-10) and
+displayed no logos at all. TVHeadend's own `/imagecache` route is not a
+substitute: it is keyed on a numeric id rather than a name, and it is
+auth-gated.
+
+tvhproxy therefore serves the same files over HTTP at `/picons/<name>.png`,
+and TVH's channel icons point there. A host-published port would not work —
+Jellyfin is a macvlan child and cannot reach the NAS host itself, whereas
+tvhproxy has its own address in the same broadcast domain.
+
+The picons live *inside the tvheadend image*, not on a host path, so they
+cannot be bind-mounted out of it; copy them once and re-copy whenever the
+image is updated:
+
+```bash
+docker cp tvheadend:/picons "${DATA}/picons"
+```
+
+Then point TVH at the HTTP copy. Do this with the container stopped — TVH
+rewrites `/config` on shutdown and would otherwise clobber the edit:
+
+```bash
+docker compose stop tvheadend
+sed -i 's|"chiconpath": "file:///picons/|"chiconpath": "http://<tvhproxy-ip>:5004/picons/|' \
+    "${DATA}/tvheadend/config/config"
+sed -i 's|file:///picons/|http://<tvhproxy-ip>:5004/picons/|g' \
+    "${DATA}"/tvheadend/config/channel/config/*
+docker compose start tvheadend
+```
+
+`piconpath` is deliberately left at `file:///picons/`: TVH only validates
+`file://` URLs before use, so pointing it at HTTP makes TVH assume every
+service-named picon exists and log a failed download for each one. The
+service-named set is not in the image anyway.
 
 ## Components
 

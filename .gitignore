@@ -11,6 +11,9 @@
 **/transcoder/queue/
 **/logs/
 *.log
+# Channel logos (picons), copied out of the tvheadend image by
+# `docker cp` so tvhproxy can serve them over HTTP — see compose.yml.
+**/picons/
 
 # Local backups and OS files.
 *.bak
@@ -37,3 +40,7 @@ tvh-src/
 # (see the install-script work item in BACKLOG.md).
 tvhproxy/etc/
 tvhproxy/passwd/
+
+# Python bytecode from local syntax checks.
+__pycache__/
+*.pyc

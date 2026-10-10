@@ -40,6 +40,13 @@ jotta Jellyfin/Plex löytävät tämän HDHomeRun-laitteena verkossa.
   HDHomeRun-laitemalli .env:stä)
 - `hdhomerun_discovery.py` — SiliconDust binary-discovery-protokolla
   (UDP 65001), jotta Jellyfinin "Auto Discover" löytää laitteen
+- `/picons/<nimi>.png` — kanavalogot (piconit) HTTP:nä. TVH antaa
+  clientille kanavaikonin muodossa `file:///picons/…`, jota mikään
+  HTTP-asiakas ei voi noutaa, joten Jellyfin ei saanut logoja lainkaan
+  ja lokitti virheen joka kanavasta. Tämä reitti tarjoaa samat
+  tiedostot; kuvat on kopioitu tvheadend-imagesta kertaalleen
+  (`docker cp tvheadend:/picons ${DATA}/picons`) — ks. pää-README,
+  "Channel logos (picons)".
 - `requirements.txt` — Python-riippuvuudet
 - `templates/device.xml` — UPnP device description
 - `.env.example` — konfiguraatiomalli; kopioi `.env`:ksi ja säädä
@@ -149,7 +156,24 @@ Macvlan-IP ei ole IPRangen sisällä. Tarkista `docker network inspect eth1`
 ja valitse IP range-alueelta.
 
 ### lineup.json palauttaa 500
-TVH-käyttäjä ei toimi. Tarkista TVH:n lokit:
+Yleisin syy ei ole TVH-käyttäjä vaan puuttuvat `TVH_USER` / `TVH_PASSWORD`
+projektin `.env`-tiedostossa. `compose.yml` välittää ne kontille
+`environment:`-lohkolla, joka **ohittaa** `tvhproxy/.env`:n — jos ne
+puuttuvat, arvoksi tulee tyhjä merkkijono, TVH vastaa 401 ja
+`_get_channels()` palauttaa `None`. Oire on osittainen: `/discover.json`
+vastaa yhä 200, joten kontti näyttää terveeltä ja Jellyfin löytää
+virittimen, mutta kanavalista katoaa. Tarkista:
+
+```bash
+docker inspect tvhproxy --format '{{range .Config.Env}}{{println .}}{{end}}' | grep TVH_USER
+```
+
+Jos arvo on tyhjä, lisää molemmat avaimet projektin `.env`:iin (arvojen
+on vastattava `TVH_URL`:ään upotettuja tunnuksia) ja aja
+`docker compose up -d tvhproxy`.
+
+Jos tunnukset ovat kunnossa, vika on itse TVH-käyttäjässä. Tarkista
+TVH:n lokit:
 ```bash
 docker logs tvheadend | grep -E "ERROR|access"
 ```

@@ -4,7 +4,7 @@ import json
 from dotenv import load_dotenv
 from ssdp import SSDPServer
 from hdhomerun_discovery import HDHomerunDiscovery
-from flask import Flask, Response, request, jsonify, abort, render_template
+from flask import Flask, Response, request, jsonify, abort, render_template, send_from_directory
 from gevent.pywsgi import WSGIServer
 import xml.etree.ElementTree as ElementTree
 from datetime import timedelta, datetime, time
@@ -53,6 +53,13 @@ config = {
     'friendlyName': os.environ.get('HDRUN_FRIENDLY_NAME') or 'tvhProxy (Pomo PVR)',
     'firmwareName': os.environ.get('HDRUN_FIRMWARE_NAME') or 'hdhomerun_dvbt',
     'firmwareVersion': os.environ.get('HDRUN_FIRMWARE_VERSION') or '20240703',
+    # Kanavalogojen (piconien) hakemisto, tarjotaan read-only polussa
+    # /picons/. TVH antaa HTSP-asiakkaille ikoniksi
+    # file:///picons/<nimi>.png, jota mikään HTTP-asiakas ei voi noutaa —
+    # Jellyfin lokittaa siksi UriFormatExceptionin joka kanavasta joka
+    # EPG-päivityksellä. Kun samat tiedostot tarjotaan täältä, TVH:n
+    # kanavaikoneiksi voi vaihtaa http://-osoitteet (ks. README).
+    'piconsDir': os.environ.get('PICONS_DIR') or '/picons',
 }
 
 discoverData = {
@@ -115,6 +122,13 @@ def device():
 @app.route('/epg.xml')
 def epg():
     return _get_xmltv(), {'Content-Type': 'application/xml'}
+
+
+@app.route('/picons/<path:name>')
+def picons(name):
+    # send_from_directory torjuu polkuun kohdistuvat hyökkäykset
+    # (../) ja palauttaa 404, jos kuvaa ei ole.
+    return send_from_directory(config['piconsDir'], name)
 
 
 def _get_channels():

@@ -11,6 +11,28 @@ the section for whatever service they are debugging.
 
 ## [Unreleased]
 
+### Fixed
+
+- **tvhproxy: channel logos now reach Jellyfin (T2/T1, `tvhproxy` +
+  `tvheadend` config).** TVH advertised `file:///picons/…` channel
+  icons, which no HTTP client can fetch, so Jellyfin logged a
+  `UriFormatException` per channel on every guide refresh and showed no
+  logos. tvhproxy now serves the picons at `/picons/<name>.png` and
+  TVH's channel icons point there. The picons are copied out of the
+  tvheadend image once (`docker cp`) because they are not on a host
+  path and cannot be bind-mounted out of another image. See
+  [README](./README.md#channel-logos-picons).
+- **tvhproxy: `/lineup.json` returned 500 whenever the container was
+  created by compose.** `compose.yml` passes `TVH_USER` / `TVH_PASSWORD`
+  through `environment:`, which overrides `tvhproxy/.env`; neither key
+  was documented in `.env.example`, so both resolved to empty strings,
+  TVH answered 401 and the channel list silently vanished — while
+  `/discover.json` kept answering, so the container still looked
+  healthy and Jellyfin still found the tuner. Both keys are now
+  documented in `.env.example`. This is why the deployed tvhproxy was a
+  hand-made container with no compose labels rather than a
+  compose-managed one.
+
 ### Changed
 
 - **README.md, ARCHITECTURE.md, CONFIGURATION.md, PROFILES.md,

@@ -399,6 +399,29 @@ services:
       # match TVH_URL above; rotate together.
       TVH_USER: ${TVH_USER}
       TVH_PASSWORD: ${TVH_PASSWORD}
+      # Kanavalogot tarjotaan polussa /picons/ (ks. volumes alla).
+      PICONS_DIR: /picons
+    volumes:
+      # Piconit eli TVH:n kanavalogot, read-only.
+      #
+      # Miksi täällä: TVH antaa HTSP-asiakkaille kanavaikonin polkuna
+      # file:///picons/<nimi>.png. Yksikään HTTP-asiakas ei voi noutaa
+      # file://-osoitetta, joten Jellyfin lokittaa UriFormatExceptionin
+      # jokaisesta kanavasta jokaisella EPG-päivityksellä eikä näytä
+      # kanavalogoa lainkaan (mitattu 2026-10-10: 34 virhettä / 3 vrk,
+      # 21 kanavaa). TVH:n oma webui näyttää ne, koska se hakee kuvat
+      # /imagecache-reitin kautta — se reitti on autentikoitu eikä
+      # hyväksy nimeä, joten sitä ei voi käyttää tähän.
+      #
+      # Host-puolen portti ei auttaisi: Jellyfin on macvlan-lapsi eikä
+      # tavoita isäntänsä IP:tä. tvhproxyllä on oma macvlan-IP samassa
+      # broadcast-domainissa, joten se kelpaa jakelijaksi.
+      #
+      # Kopioi kuvat isäntään kertaalleen (ne ovat tvheadend-imagen
+      # sisällä, ei host-polkua):
+      #   docker cp tvheadend:/picons ${DATA}/picons
+      # ja osoita sitten TVH:n kanavaikonit tänne — ks. README.
+      - ${DATA}/picons:/picons:ro
     networks:
       eth1:
         ipv4_address: ${LOCAL_IPV4_3}
