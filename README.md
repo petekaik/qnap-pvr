@@ -86,6 +86,30 @@ Fixing them means supplying a logo file per channel, or clearing the
 service-picon association so TVH advertises no icon at all (which stops
 the error but shows no logo).
 
+**Correction (added later the same day — read this before trusting the
+section above).** An earlier version of this section implied that serving
+the picons over HTTP fixed Jellyfin's channel-image errors. It does not.
+TVH's `htsp_image()` (`src/htsp_server.c`) shows that for HTSP clients at
+protocol version 15 or above — Jellyfin's plugin negotiates 44 — TVH does
+**not** pass the configured icon URL through at all: it substitutes a
+*relative* `imagecache/<id>` reference. The `file://` path is therefore
+never handed to Jellyfin.
+
+The guide's `UriFormatException` has a different cause. The plugin rebuilds
+an absolute URL from that relative reference and embeds the TVH account's
+credentials in it **unencoded**, producing
+`http://<user>:<password>@<tvh-host>:<port>/imagecache/<id>`. If that
+password contains characters that are not valid in URI userinfo — `@`, or a
+`%` not followed by two hex digits — .NET rejects the URL with
+`Invalid URI: The hostname could not be parsed`, and every channel image
+fails. Measured on this deployment 2026-10-10 against Jellyfin 12.2.0 and
+plugin 15.0.0.0. The remedy is a **URL-safe (alphanumeric) password** on
+whichever TVH account the plugin authenticates with.
+
+Serving the picons here is still worth keeping — it is what TVH's own image
+cache fetches from, and it keeps `chiconpath` reachable by any consumer that
+takes the raw icon — but it is not what Jellyfin's errors were about.
+
 ## Components
 
 | Container     | Image (build context / source)                | Role                                                        |

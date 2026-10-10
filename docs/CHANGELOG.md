@@ -13,6 +13,16 @@ the section for whatever service they are debugging.
 
 ### Fixed
 
+- **CORRECTION to the entry below: it does not fix Jellyfin's channel-image
+  errors, and that entry overstates its effect.** TVH never hands Jellyfin
+  the configured icon URL: for HTSP ≥ 15 (the plugin negotiates 44)
+  `htsp_image()` substitutes a **relative** `imagecache/<id>` reference. The
+  real cause of the `UriFormatException` in the guide is the plugin
+  rebuilding an absolute URL from that reference with the TVH account's
+  credentials embedded **unencoded** (`http://user:password@host:9981/…`),
+  which .NET rejects when the password is not URL-safe. Remedy: a URL-safe
+  password for the plugin's TVH account. See
+  [README](./README.md#channel-logos-picons).
 - **tvhproxy: channel logos now reach Jellyfin (T2/T1, `tvhproxy` +
   `tvheadend` config).** TVH advertised `file:///picons/…` channel
   icons, which no HTTP client can fetch, so Jellyfin logged a
